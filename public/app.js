@@ -51,7 +51,7 @@ function currentTheme() {
 
 function updateThemeToggleLabel() {
   const isDark = currentTheme() === "dark";
-  themeToggle.textContent = isDark ? "☀️ Light" : "🌙 Dark";
+  themeToggle.textContent = isDark ? "Light mode" : "Dark mode";
 }
 
 themeToggle.addEventListener("click", () => {
@@ -98,6 +98,7 @@ sampleBtn.addEventListener("click", async () => {
   try {
     const res = await fetch("sample-feedback.txt");
     feedbackInput.value = await res.text();
+    updateFeedbackCount();
   } catch (err) {
     setStatus("Could not load sample-feedback.txt", true);
   }
@@ -107,12 +108,13 @@ fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
   feedbackInput.value = await file.text();
+  updateFeedbackCount();
 });
 
 analyzeBtn.addEventListener("click", async () => {
   const feedback = feedbackInput.value.trim();
   if (!feedback) {
-    setStatus("Paste some feedback first, or click 'Load Sample Data'.", true);
+    setStatus("Paste some feedback first, or click 'Try sample feedback'.", true);
     return;
   }
 
@@ -401,7 +403,7 @@ function renderPriorityTable() {
       ${riceFieldCell(t, "confidence", `<input class="rice-input" type="number" min="0" max="100" step="1" data-field="confidence" value="${t.confidence}" />`)}
       ${riceFieldCell(t, "effort", `<input class="rice-input" type="number" min="0.25" step="0.25" data-field="effort" value="${t.effort}" />`)}
       <td class="rice-score">${t.rice_score}</td>
-      <td class="no-print"><button class="reasoning-toggle" type="button">why?</button></td>
+      <td class="no-print"><button class="reasoning-toggle" type="button">Details</button></td>
     `;
 
     const reasoningRow = document.createElement("tr");
@@ -613,7 +615,7 @@ function renderRoadmapSummary() {
         <label class="decision-label">Decision:</label>
         ${decisionSelectHtml(t)}
       </div>
-      <button type="button" class="btn btn-primary generate-prd-btn">Generate PRD</button>
+      <button type="button" class="btn btn-primary generate-prd-btn">Draft product brief</button>
     `;
 
     card.querySelector(".decision-select").addEventListener("change", (e) => {
@@ -710,9 +712,48 @@ function escapeHtml(str) {
     if (mockMode) {
       modeBanner.hidden = false;
       modeBanner.textContent =
-        "Mock mode is ON: clustering, RICE scores, and the PRD are templated placeholders, not live Gemini output. Set GEMINI_API_KEY and MOCK_MODE=false in .env for real results.";
+        "Demo mode · Explore the full workflow with sample results. Live AI analysis is off.";
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */
   }
 })();
+
+// Keep navigation aligned with the stages available in this analysis.
+const stepButtons = [...document.querySelectorAll(".step")];
+function activateStep(id) {
+  stepButtons.forEach(button => {
+    const active = button.dataset.stage === id;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+  });
+}
+stepButtons.forEach(button => button.addEventListener("click", () => {
+  const stage = $(button.dataset.stage);
+  if (!stage.hidden) {
+    activateStep(stage.id);
+    stage.scrollIntoView({ behavior: "smooth", block: "start" });
+    stage.focus({ preventScroll: true });
+  }
+}));
+const stageObserver = new MutationObserver(records => {
+  stepButtons.forEach(button => { button.disabled = $(button.dataset.stage).hidden; });
+  const opened = records.filter(record => !record.target.hidden).at(-1);
+  if (opened) activateStep(opened.target.id);
+  else if (stepButtons.some(button => button.disabled && button.classList.contains("active"))) activateStep("inputStage");
+});
+stepButtons.forEach(button => {
+  const stage = $(button.dataset.stage);
+  stage.tabIndex = -1;
+  stageObserver.observe(stage, { attributes: true, attributeFilter: ["hidden"] });
+});
+const visibleStages = new IntersectionObserver(entries => {
+  const visible = entries.filter(entry => entry.isIntersecting && !entry.target.hidden);
+  if (visible.length) activateStep(visible[0].target.id);
+}, { rootMargin: "-15% 0px -55% 0px" });
+stepButtons.forEach(button => visibleStages.observe($(button.dataset.stage)));
+function updateFeedbackCount() {
+  $("feedbackCount").textContent = `${feedbackInput.value.length.toLocaleString()} characters`;
+}
+feedbackInput.addEventListener("input", updateFeedbackCount);
