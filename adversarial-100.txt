@@ -1,0 +1,100 @@
+The app takes way too long to load every single time.
+Dashboard performance has been terrible lately, everything lags.
+I get notified for every tiny change, it's overwhelming.
+Please let me mute notifications for specific projects only.
+I was charged twice this month for no reason.
+The invoice doesn't match what I actually owe.
+Would love native Google Calendar sync for due dates.
+Outlook integration is completely missing.
+Search never finds tasks older than a few weeks.
+I can't search archived projects at all.
+Setting permissions for new teammates is a nightmare.
+I can't figure out how to make someone an admin.
+The app freezes for several seconds when switching tabs.
+Loading the task list takes forever on slow wifi.
+Notification settings are impossible to customize.
+I got billed for a plan I never selected.
+Calendar sync would save me hours every week.
+Archived tasks are essentially invisible to search.
+Sharing a project with an external contractor is confusing.
+The app becomes unusable after 200+ tasks in a project.
+I keep getting duplicate notifications for the same comment.
+My credit card was charged before my free trial even ended.
+There's no way to export tasks to my calendar app.
+Global search only searches the current workspace, not archives.
+The mobile app is sluggish and sometimes freezes entirely.
+Notifications take forever to actually show up on my phone.
+Billing emails are delayed by days, so I don't know I've been charged.
+Search results load slowly when I have a lot of archived tasks.
+Permission changes trigger a flood of notification emails to the whole team.
+The calendar view is painfully slow to render with many events.
+My subscription renewed but the confirmation notification never arrived.
+Switching between projects with lots of shared users is laggy.
+The search bar sometimes doesn't respond for several seconds.
+Changing a permission role sends a notification that's oddly worded, almost like a billing alert.
+The app hangs when I try to open the notification settings page.
+Calendar sync sometimes duplicates events, which also spams notifications.
+I get billed and notified at the same time, but the amounts don't match.
+Archived project search sometimes triggers a permissions error instead of results.
+Loading the permissions panel is slower than any other screen in the app.
+Everything about the app is great except the notification sound, which is too loud.
+Billing support was actually really kind when I called about an unrelated bug.
+The calendar icon in the sidebar is a weird shade of blue.
+Search worked fine, but the button next to it is hard to click.
+I mentioned the slow loading to a teammate who works in billing, not a complaint about billing itself.
+Permissions aside, the onboarding flow itself was confusing.
+The app crashed right after I opened my calendar, but I don't think it's calendar-related.
+Notifications are fine, but the app is unbearably slow overall.
+I was reading your billing policy page and noticed a typo, unrelated to my actual invoice.
+The search icon overlaps with the notification bell visually.
+My teammate with admin permissions told me the app has been lagging for her too.
+The calendar looks nice, my real complaint is that exporting PDFs is broken.
+Notification preferences aside, I just want dark mode.
+Everything crashed during a billing cycle, but the timing was coincidental, not caused by billing.
+The permissions documentation mentions search, but my actual issue is unrelated to search.
+The app is slow AND I keep getting double-charged every month - the billing issue is worse.
+Search is broken and notifications are way too frequent, but honestly the notifications bother me more.
+I can't sync my calendar and permissions are a mess for my team, calendar sync being the bigger blocker for me.
+Loading takes forever and I can never find old tasks with search - the loading issue is what's driving me to quit.
+Got charged wrong AND can't find my archived tasks, but the charge is the urgent one.
+Notifications are excessive and the mobile app crashes constantly - the crashes are unacceptable, the notifications I can live with.
+Permissions are confusing and the search bar is laggy, permissions being my primary blocker as an admin.
+Calendar sync fails and I was billed twice, calendar sync being the recurring daily annoyance.
+The app is slow, notifications are spammy, and billing is wrong - if I had to pick one, it's the billing error.
+Search doesn't work and my team can't set permissions correctly, the permissions issue blocking our whole rollout.
+Something feels off about this app lately.
+It's just not as good as it used to be.
+I don't know, it just doesn't feel right anymore.
+There's definitely a bug somewhere, not sure where.
+Things have been weird recently.
+I'm not happy with the overall experience.
+The app needs some work, hard to say exactly what.
+It's fine I guess, could be better.
+Not sure what changed, but something did.
+I have mixed feelings about the last few updates.
+I wish you had a purple logo option.
+Your customer support rep was super friendly, just wanted to say thanks.
+Do you have a referral program?
+I love using this app, keep up the great work!
+What's the story behind your company name?
+Any plans for a company blog or newsletter?
+The font choice in your marketing emails is nice.
+I'd like to see more case studies on your website.
+Just wanted to say happy holidays to the team.
+Do you sponsor any open source projects?
+Oh sure, "instant" notifications that show up an hour later, great job.
+Love how the app is definitely NOT slow when I have 500 tasks open (it absolutely is).
+Billing support said there's "no way" I was double-charged - my bank statement disagrees.
+Search "works perfectly" as long as you don't need anything older than a week.
+Permissions are "simple" if you enjoy spending an hour figuring out who can see what.
+Calendar sync "just works" - except when it doesn't, which is most of the time.
+The app isn't slow, it's just that everything takes five minutes to load, totally different thing.
+Notifications aren't excessive, I just happen to get 200 a day for no reason.
+App is slow.
+Too many notifications.
+Wrong charge again.
+No calendar sync.
+Can't find old tasks.
+I've been using TaskFlow for about eight months now with my team of twelve, and overall it's been a solid tool for keeping projects organized, though I have to say the last two updates have introduced some real friction - the dashboard now takes noticeably longer to load in the mornings, sometimes five or six seconds before I can even see my task list, and while that's annoying on its own, it's compounded by the fact that our billing has also become confusing since we upgraded to the team plan, because the invoice we received didn't match the pricing page at all and support took nearly a week to sort it out, which for a company our size is a long time to wait when you're trying to reconcile your books.
+My biggest frustration with the platform right now, after using it daily for a project involving three different departments, is honestly a combination of things that individually might seem small but together make the whole experience feel clunky - notifications fire for every single minor edit anyone makes anywhere in a shared project, which means my phone buzzes constantly throughout the day, and when I finally do get frustrated enough to try to fix the notification settings myself, I discover that the options are so limited that I basically have to choose between "everything" and "nothing," and on top of that, when I tried to find a task from a project we archived back in the spring, search came back completely empty even though I know for a fact the task exists because I created it myself.
+Setting up our team's workspace was more painful than it should have been - as the admin, I spent close to an hour trying to figure out how to give our new contractor view-only access to just two of our seven projects without accidentally exposing our billing information or our other clients' data, and the permissions UI is spread across at least three different settings pages that don't obviously connect to each other, which made me genuinely nervous that I'd misconfigure something, and separately, once I did get everything set up, the contractor mentioned that the mobile app kept crashing on her phone whenever she tried to open a task with a lot of comments, which is a separate and much scarier problem than the permissions confusion.

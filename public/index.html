@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Feedback-to-Roadmap Copilot</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="theme-init.js"></script>
+</head>
+<body>
+  <header class="app-header no-print">
+    <div>
+      <h1>Feedback-to-Roadmap Copilot</h1>
+      <p class="subtitle">Messy feedback in, a prioritized, stakeholder-ready roadmap out.</p>
+    </div>
+    <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle dark mode"></button>
+  </header>
+
+  <div id="modeBanner" class="mode-banner no-print" hidden></div>
+  <div id="statusBanner" class="status-banner no-print" hidden></div>
+
+  <main>
+    <!-- Stage 1: Input -->
+    <section class="card" id="inputStage">
+      <h2>1. Feedback Input</h2>
+      <p class="hint">Paste raw feedback (one item per line works well - app reviews, survey responses, support tickets), or upload a .txt file.</p>
+      <textarea id="feedbackInput" rows="10" placeholder="Paste raw user feedback here, one item per line..."></textarea>
+      <div class="controls-row no-print">
+        <label class="btn btn-secondary file-label">
+          Upload .txt
+          <input type="file" id="fileInput" accept=".txt,text/plain" hidden />
+        </label>
+        <button id="sampleBtn" class="btn btn-secondary">Load Sample Data</button>
+        <button id="analyzeBtn" class="btn btn-primary">Analyze Feedback</button>
+      </div>
+    </section>
+
+    <!-- Stage 2: Themes -->
+    <section class="card" id="themesStage" hidden>
+      <h2>2. Clustered Themes</h2>
+      <p class="hint">Each theme is tagged with <strong>frequency</strong> (how often it comes up) and <strong>severity</strong> (how much it matters), scored independently. Every feedback item is classified into at most one theme's evidence - click "View supporting feedback" to see the full list, flag low-confidence classifications, and reassign an item if the AI got it wrong.</p>
+      <div id="themesList" class="themes-grid"></div>
+      <div id="unclassifiedSection"></div>
+      <div class="controls-row no-print">
+        <button id="prioritizeBtn" class="btn btn-primary">Prioritize with RICE</button>
+      </div>
+    </section>
+
+    <!-- Stage 3: Prioritization -->
+    <section class="card" id="priorityStage" hidden>
+      <h2>3. Prioritized Roadmap (RICE)</h2>
+      <p class="hint">
+        RICE score = (Reach &times; Impact &times; Confidence) / Effort. <strong>Frequency</strong>
+        is a fact about your feedback (how many items raised it) - <strong>Reach</strong> is the
+        AI's judgment call about your wider user base, and they are deliberately not the same
+        number. Every AI estimate is editable: edit any input below and the score recalculates
+        instantly, and the cell is marked as a PM override once you do.
+      </p>
+      <div class="table-wrap">
+        <table id="priorityTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Theme</th>
+              <th>Frequency</th>
+              <th>Reach</th>
+              <th>Impact</th>
+              <th>Confidence %</th>
+              <th>Effort (wks)</th>
+              <th>RICE Score</th>
+              <th class="no-print"></th>
+            </tr>
+          </thead>
+          <tbody id="priorityTableBody"></tbody>
+        </table>
+      </div>
+      <div class="controls-row no-print">
+        <button id="summaryBtn" class="btn btn-primary">View Roadmap Summary</button>
+      </div>
+    </section>
+
+    <!-- Stage 4: Roadmap Summary -->
+    <section class="card" id="summaryStage" hidden>
+      <h2>4. Roadmap Summary</h2>
+      <p class="hint">The top-ranked initiatives, with the evidence behind each score. Pick one to draft a PRD for.</p>
+      <div id="summaryList" class="summary-list"></div>
+    </section>
+
+    <!-- Stage 5: PRD -->
+    <section class="card" id="prdStage" hidden>
+      <h2>5. Draft PRD</h2>
+      <div id="prdDecisionBadge" class="decision-badge" hidden></div>
+      <div id="prdContent" class="prd-doc"></div>
+    </section>
+
+    <!-- Stage 6: Export -->
+    <section class="card no-print" id="exportStage" hidden>
+      <h2>6. Export Analysis</h2>
+      <p class="hint">The printed/PDF copy includes the full pipeline below this point - input, themes and evidence, RICE table, roadmap summary, and the PRD with its decision.</p>
+      <div class="controls-row">
+        <button id="printExportBtn" class="btn btn-primary">Print / Save as PDF</button>
+        <button id="copyPrdBtn" class="btn btn-secondary">Copy PRD</button>
+        <button id="copySummaryBtn" class="btn btn-secondary">Copy Roadmap Summary</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

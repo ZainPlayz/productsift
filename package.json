@@ -1,0 +1,20 @@
+{
+  "name": "feedback-to-roadmap-copilot",
+  "version": "1.0.0",
+  "description": "Turns messy user feedback into a clustered, RICE-prioritized, stakeholder-ready roadmap with an auto-drafted PRD.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "zod": "^4.6.2"
+  }
+}
