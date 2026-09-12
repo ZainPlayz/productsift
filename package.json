@@ -1,5 +1,5 @@
 {
-  "name": "feedback-to-roadmap-copilot",
+  "name": "productsift",
   "version": "1.0.0",
   "description": "Turns messy user feedback into a clustered, RICE-prioritized, stakeholder-ready roadmap with an auto-drafted PRD.",
   "type": "module",

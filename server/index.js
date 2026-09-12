@@ -59,6 +59,6 @@ app.use("/api/prd", llmRateLimiter, prdRouter);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const mock = process.env.MOCK_MODE === "true";
-  console.log(`Feedback-to-Roadmap Copilot running at http://localhost:${PORT}`);
+  console.log(`ProductSift running at http://localhost:${PORT}`);
   console.log(mock ? "Mock mode: ON (no Gemini API calls, no API key needed)" : "Mock mode: OFF (calling the live Gemini API)");
 });

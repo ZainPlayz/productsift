@@ -1,4 +1,4 @@
-# Feedback-to-Roadmap Copilot
+# ProductSift
 
 Turns a batch of messy, unstructured user feedback into evidence-backed themes, a transparent
 RICE-prioritized roadmap, a PM decision on each item, and an auto-drafted, decision-aware PRD —
