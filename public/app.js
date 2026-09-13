@@ -47,6 +47,7 @@ const copySummaryBtn = $("copySummaryBtn");
 const statusBanner = $("statusBanner");
 const modeBanner = $("modeBanner");
 const themeToggle = $("themeToggle");
+const resetBtn = $("resetBtn");
 
 // --- Theme (light/dark) ---
 // The <head> script already applied any saved choice before first paint, to
@@ -804,3 +805,48 @@ function updateFeedbackCount() {
   $("feedbackCount").textContent = `${feedbackInput.value.length.toLocaleString()} characters`;
 }
 feedbackInput.addEventListener("input", updateFeedbackCount);
+
+// --- Reset ---
+
+// Clears every in-memory stage so a PM can start a new analysis without a
+// page refresh (which would also lose the theme toggle's read of localStorage
+// mid-load and re-trigger the mode-banner fetch for no reason). Hiding each
+// downstream stage - rather than removing it - is enough: the MutationObserver
+// wired up above (stageObserver) already reacts to a stage's `hidden` flag
+// flipping by disabling its nav button and, once the active step is disabled,
+// falling back to "Feedback" - so step nav state doesn't need to be touched here.
+resetBtn.addEventListener("click", () => {
+  const hasProgress = clusteredThemes.length > 0 || feedbackInput.value.trim().length > 0;
+  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, RICE edits, and any generated PRD.")) {
+    return;
+  }
+
+  clusteredThemes = [];
+  unclassifiedItems = [];
+  unclassifiedReasons = {};
+  rankedThemes = [];
+  feedbackItems = [];
+  lastPrdMarkdown = "";
+  lastPrdTheme = null;
+
+  feedbackInput.value = "";
+  fileInput.value = "";
+  updateFeedbackCount();
+
+  themesList.innerHTML = "";
+  unclassifiedSection.innerHTML = "";
+  priorityTableBody.innerHTML = "";
+  summaryList.innerHTML = "";
+  prdContent.innerHTML = "";
+  prdDecisionBadge.hidden = true;
+
+  themesStage.hidden = true;
+  priorityStage.hidden = true;
+  summaryStage.hidden = true;
+  prdStage.hidden = true;
+  exportStage.hidden = true;
+
+  setStatus(null);
+  $("inputStage").scrollIntoView({ behavior: "smooth", block: "start" });
+  feedbackInput.focus();
+});

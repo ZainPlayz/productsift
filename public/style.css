@@ -102,6 +102,26 @@ body {
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   transition: background-color var(--transition-theme), color var(--transition-theme);
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Plain display text (theme names, quotes, RICE cells, summary lines, etc.)
+   otherwise shows the browser's default I-beam cursor and highlights on
+   click, which reads as an editable field even though it isn't one. Only
+   actual inputs get the text cursor + selection back. */
+textarea,
+input,
+.rice-input {
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+select,
+.reassign-select {
+  cursor: pointer;
 }
 
 body,
@@ -138,6 +158,8 @@ td,
 
 .app-header h1 { margin: 0 0 4px; font-size: 1.5rem; }
 .subtitle { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+
+.header-actions { display: flex; align-items: center; gap: 10px; }
 
 .theme-toggle {
   background: var(--subtle-bg);
