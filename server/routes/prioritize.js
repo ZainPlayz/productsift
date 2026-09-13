@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, MOCK_MODE, toGeminiSchema, generateContentWithRetry } from "../llmClient.js";
+import { MODEL, MOCK_MODE, toGroqResponseFormat, createChatCompletionWithRetry } from "../llmClient.js";
 import { PrioritizeResponseSchema } from "../schemas.js";
 import { mockPrioritizeThemes } from "../mocks/fixtures.js";
 
@@ -46,7 +46,7 @@ router.post("/", async (req, res) => {
 
     const estimates = MOCK_MODE
       ? mockPrioritizeThemes(themes)
-      : await prioritizeWithGemini(themes);
+      : await prioritizeWithGroq(themes);
 
     // Identity fields (theme/definition/frequency/severity/supporting_item_numbers/
     // example_quotes) always come from the original clustered theme, matched
@@ -91,7 +91,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-async function prioritizeWithGemini(themes) {
+async function prioritizeWithGroq(themes) {
   // Only what the model needs to reason about RICE - theme objects also
   // carry supporting_item_numbers and per-item confidence (evidence-layer
   // detail from clustering) that would just be extra tokens here, on a free
@@ -103,17 +103,16 @@ async function prioritizeWithGemini(themes) {
     frequency: t.frequency,
   }));
 
-  const response = await generateContentWithRetry({
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
-    contents: `Score these themes using RICE:\n\n${JSON.stringify(forPrompt, null, 2)}`,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: toGeminiSchema(PrioritizeResponseSchema),
-    },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Score these themes using RICE:\n\n${JSON.stringify(forPrompt, null, 2)}` },
+    ],
+    response_format: toGroqResponseFormat(PrioritizeResponseSchema, "prioritize_response"),
   });
 
-  const parsed = PrioritizeResponseSchema.parse(JSON.parse(response.text));
+  const parsed = PrioritizeResponseSchema.parse(JSON.parse(response.choices[0].message.content));
   if (parsed.themes.length !== themes.length) {
     throw new Error(
       `Model returned ${parsed.themes.length} RICE estimates for ${themes.length} input themes.`,

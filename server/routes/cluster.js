@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, MOCK_MODE, toGeminiSchema, generateContentWithRetry } from "../llmClient.js";
+import { MODEL, MOCK_MODE, toGroqResponseFormat, createChatCompletionWithRetry } from "../llmClient.js";
 import {
   DiscoveryResponseSchema,
   ClassificationResponseSchema,
@@ -40,7 +40,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "No feedback items found (each item should be on its own line)." });
     }
 
-    const result = MOCK_MODE ? CLUSTER_MOCK_RESULT : await clusterWithGemini(items);
+    const result = MOCK_MODE ? CLUSTER_MOCK_RESULT : await clusterWithGroq(items);
     res.json({ ...result, items });
   } catch (err) {
     console.error("cluster error:", err);
@@ -68,16 +68,15 @@ Do not assign items to themes here - that happens in a separate step.`;
 
 async function discoverThemes(items) {
   const numberedList = items.map((item, i) => `${i + 1}. ${item}`).join("\n");
-  const response = await generateContentWithRetry({
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
-    contents: `Numbered feedback batch:\n\n${numberedList}`,
-    config: {
-      systemInstruction: DISCOVERY_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: toGeminiSchema(DiscoveryResponseSchema),
-    },
+    messages: [
+      { role: "system", content: DISCOVERY_PROMPT },
+      { role: "user", content: `Numbered feedback batch:\n\n${numberedList}` },
+    ],
+    response_format: toGroqResponseFormat(DiscoveryResponseSchema, "discovery_response"),
   });
-  return DiscoveryResponseSchema.parse(JSON.parse(response.text));
+  return DiscoveryResponseSchema.parse(JSON.parse(response.choices[0].message.content));
 }
 
 // --- Call 2: classification (primary issue vs. theme DEFINITIONS only) ---
@@ -97,16 +96,18 @@ not be rounded up - a downstream system, not you, decides whether a score is hig
 
 async function classifyIssues(itemPrimaryIssues, themes) {
   const themesForPrompt = themes.map((t) => ({ theme_id: t.theme_id, theme: t.theme, definition: t.definition }));
-  const response = await generateContentWithRetry({
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
-    contents: `Primary issues:\n${JSON.stringify(itemPrimaryIssues, null, 2)}\n\nTheme definitions:\n${JSON.stringify(themesForPrompt, null, 2)}`,
-    config: {
-      systemInstruction: CLASSIFICATION_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: toGeminiSchema(ClassificationResponseSchema),
-    },
+    messages: [
+      { role: "system", content: CLASSIFICATION_PROMPT },
+      {
+        role: "user",
+        content: `Primary issues:\n${JSON.stringify(itemPrimaryIssues, null, 2)}\n\nTheme definitions:\n${JSON.stringify(themesForPrompt, null, 2)}`,
+      },
+    ],
+    response_format: toGroqResponseFormat(ClassificationResponseSchema, "classification_response"),
   });
-  const parsed = ClassificationResponseSchema.parse(JSON.parse(response.text));
+  const parsed = ClassificationResponseSchema.parse(JSON.parse(response.choices[0].message.content));
   return parsed.classifications;
 }
 
@@ -128,22 +129,21 @@ async function validateClassifications(toValidate, items, primaryIssueByItem, th
     assigned_theme: themeById.get(c.tentativeThemeId).theme,
     theme_definition: themeById.get(c.tentativeThemeId).definition,
   }));
-  const response = await generateContentWithRetry({
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
-    contents: `Classifications to review:\n\n${JSON.stringify(forPrompt, null, 2)}`,
-    config: {
-      systemInstruction: VALIDATION_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: toGeminiSchema(ValidationResponseSchema),
-    },
+    messages: [
+      { role: "system", content: VALIDATION_PROMPT },
+      { role: "user", content: `Classifications to review:\n\n${JSON.stringify(forPrompt, null, 2)}` },
+    ],
+    response_format: toGroqResponseFormat(ValidationResponseSchema, "validation_response"),
   });
-  const parsed = ValidationResponseSchema.parse(JSON.parse(response.text));
+  const parsed = ValidationResponseSchema.parse(JSON.parse(response.choices[0].message.content));
   return parsed.validations;
 }
 
 // --- Orchestration + the code-owned acceptance gate ---
 
-async function clusterWithGemini(items) {
+async function clusterWithGroq(items) {
   const { item_primary_issues, themes } = await discoverThemes(items);
   const primaryIssueByItem = new Map(item_primary_issues.map((p) => [p.item_number, p.primary_issue]));
   const themeByIdMap = mapThemesById(themes);

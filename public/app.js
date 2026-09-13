@@ -224,7 +224,7 @@ function reassignItem(itemNumber, fromThemeId, toThemeId) {
   );
 }
 
-// "Fit", not "confidence" - Gemini doesn't actually know there's a 96%
+// "Fit", not "confidence" - the model doesn't actually know there's a 96%
 // probability it's correct, so the UI shouldn't imply that kind of
 // objective certainty. Only 2 buckets apply to ACCEPTED items (strong/
 // moderate - anything below cluster.js's threshold never becomes evidence
@@ -738,7 +738,7 @@ function escapeHtml(str) {
     const { mockMode } = await res.json();
     if (mockMode) {
       modeBanner.hidden = false;
-      modeBanner.textContent = "Demo mode: showing sample results, not live Gemini output.";
+      modeBanner.textContent = "Demo mode: showing sample results, not live Groq output.";
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */

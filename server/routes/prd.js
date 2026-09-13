@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, MOCK_MODE, generateContentWithRetry } from "../llmClient.js";
+import { MODEL, MOCK_MODE, createChatCompletionWithRetry } from "../llmClient.js";
 import { mockGeneratePRD } from "../mocks/fixtures.js";
 
 const router = Router();
@@ -83,17 +83,20 @@ router.post("/", async (req, res) => {
     const decisionFraming = DECISION_FRAMING[theme.decision] || "";
     const systemPrompt = decisionFraming ? `${BASE_SYSTEM_PROMPT}\n\n${decisionFraming}` : BASE_SYSTEM_PROMPT;
 
-    const response = await generateContentWithRetry({
+    const response = await createChatCompletionWithRetry({
       model: MODEL,
-      contents: `Draft the PRD for this theme:\n\n${JSON.stringify(theme, null, 2)}`,
-      config: { systemInstruction: systemPrompt },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Draft the PRD for this theme:\n\n${JSON.stringify(theme, null, 2)}` },
+      ],
     });
 
-    if (!response.text) {
+    const prd = response.choices[0].message.content;
+    if (!prd) {
       throw new Error("Model response contained no text content.");
     }
 
-    res.json({ prd: response.text });
+    res.json({ prd });
   } catch (err) {
     console.error("prd error:", err);
     res.status(500).json({ error: "Failed to generate PRD.", detail: err.message });

@@ -60,5 +60,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const mock = process.env.MOCK_MODE === "true";
   console.log(`ProductSift running at http://localhost:${PORT}`);
-  console.log(mock ? "Mock mode: ON (no Gemini API calls, no API key needed)" : "Mock mode: OFF (calling the live Gemini API)");
+  console.log(mock ? "Mock mode: ON (no Groq API calls, no API key needed)" : "Mock mode: OFF (calling the live Groq API)");
 });

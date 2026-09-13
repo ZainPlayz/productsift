@@ -256,7 +256,7 @@ const IMPACT_LABEL = { 0.25: "minimal", 0.5: "low", 1: "medium", 2: "high", 3: "
 
 // Returns estimates in the SAME ORDER as the input themes array - the caller
 // (prioritize.js) matches estimates back to themes by array position, the
-// same way the live Gemini path does, so this must not re-sort.
+// same way the live Groq path does, so this must not re-sort.
 export function mockPrioritizeThemes(themes) {
   return themes.map((t) => {
     const impact = IMPACT_BY_SEVERITY[t.severity] ?? 1;
@@ -319,6 +319,6 @@ ${theme.example_quotes.map((q) => `> "${q}"`).join("\n\n")}
 - Are there smaller, faster wins worth shipping ahead of a full fix?
 
 ---
-*Generated in MOCK_MODE - this is a templated PRD used to verify the pipeline end-to-end without calling the Gemini API. Set GEMINI_API_KEY and turn MOCK_MODE off for a real, AI-drafted PRD.*
+*Generated in MOCK_MODE - this is a templated PRD used to verify the pipeline end-to-end without calling the Groq API. Set GROQ_API_KEY and turn MOCK_MODE off for a real, AI-drafted PRD.*
 `;
 }

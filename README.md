@@ -44,14 +44,14 @@ cp .env.example .env
 ```
 
 By default `.env` has `MOCK_MODE=true`, so you can run the whole app immediately with **no
-API key** — every step returns realistic templated data instead of calling Gemini. This is
+API key** — every step returns realistic templated data instead of calling Groq. This is
 how the pipeline was built and tested end-to-end.
 
 To get real, AI-generated clustering/scoring/PRD output:
 
 1. Get a **free** key (no credit card needed) at
-   [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-2. In `.env`, set `GEMINI_API_KEY=...` and `MOCK_MODE=false`.
+   [console.groq.com/keys](https://console.groq.com/keys).
+2. In `.env`, set `GROQ_API_KEY=...` and `MOCK_MODE=false`.
 
 Then run:
 
@@ -77,33 +77,53 @@ steps to go live:
 
 1. Click the button above (or **New +** → **Blueprint** on [Render](https://dashboard.render.com)
    and point it at this repo).
-2. When prompted, add `GEMINI_API_KEY` as an environment variable (Render's blueprint flow asks
+2. When prompted, add `GROQ_API_KEY` as an environment variable (Render's blueprint flow asks
    for any var marked `sync: false` — the key never gets committed to the repo).
 3. Deploy. Render builds with `npm install` and starts with `npm start`.
 
 **Public deployments default to `MOCK_MODE=true`** (set in `render.yaml`) — a shared free-tier
-Gemini quota (20 requests/day) would otherwise be exhausted by the first few visitors clicking
-around, breaking the demo for everyone including you. Flip it to `false` in the Render dashboard
-if you want a specific deployment to run real live analysis instead, understanding that tradeoff.
+Groq quota (1,000 requests/day for the default model) would otherwise be exhausted by enough
+visitors clicking around, breaking the demo for everyone including you. Flip it to `false` in
+the Render dashboard if you want a specific deployment to run real live analysis instead,
+understanding that tradeoff.
 
 Any other Node host works too (Railway, Fly.io, etc.) — the app only needs `npm install` /
 `npm start`, a `PORT` env var (already read from `process.env.PORT`), and the two vars above.
 
-## Why Gemini instead of a paid API
+## Why Groq instead of a paid API (and why it replaced Gemini)
 
-Google AI Studio's free tier needs no credit card and no billing account, which matters for a
-project you'll be re-running a lot while building and demoing it. The free tier is rate-limited
-(requests/day and requests/minute), which is exactly why this project rate-limits its own API
-routes — see **Security & rate limiting** below — so a burst of clicks (or, if this were ever
-deployed publicly, a random visitor) can't blow through the daily quota in one go.
+**This project originally ran on Google Gemini** (`gemini-3.6-flash`) and switched to Groq
+during development, for two concrete, measured reasons rather than a hunch:
 
-**In practice, the free daily quota for `gemini-3.6-flash` is small — 20 requests/day per
-project**, confirmed by hitting it during development (each full pipeline run costs 3 requests:
-cluster, prioritize, PRD). That's enough for real demo runs in an interview but not for repeated
-heavy testing in one day. If you exhaust it, the API returns a `429` with a quota-reset message;
-`MOCK_MODE=true` keeps the app fully demoable while you wait, or a lighter-weight free model
-(check current limits at [ai.google.dev/gemini-api/docs/rate-limits](https://ai.google.dev/gemini-api/docs/rate-limits))
-may offer a higher daily cap in exchange for lower quality.
+1. **Speed.** Live testing repeatedly showed full analysis runs taking 60+ seconds under
+   Gemini's free-tier load, occasionally ending in a `503` ("high demand") after all retries
+   were exhausted — confirmed via server logs, not assumed. Groq runs inference on custom LPU
+   hardware built specifically for low-latency generation, which is the actual product Groq
+   sells; it's the direct fix for "analysis takes too long," not a workaround.
+2. **Quota.** Gemini's free tier allowed **20 requests/day** — confirmed by hitting it more than
+   once during development (each full run costs 5 requests: 3 for clustering's discover/classify/
+   validate pipeline, 1 for prioritize, 1 for PRD, so ~4 full runs/day). Groq's free tier for
+   `llama-3.3-70b-versatile` allows **1,000 requests/day** — about 200 full runs/day, roughly a
+   50x improvement, without changing anything about the three-call architecture that caused the
+   original quota pressure.
+
+Both are free, no-credit-card tiers, which matters for a project you re-run constantly while
+building and demoing it — the rate-limiting practices below (per-IP limits, retry-with-backoff)
+apply the same way regardless of provider.
+
+**One tradeoff worth being upfront about**: Groq serves open-weight models (Llama, in this
+project's case), not Gemini's proprietary flash models — a genuinely different model, not just a
+faster host for the same one. Output quality (RICE reasoning, PRD prose, classification judgment)
+needed to be re-verified after the switch, the same diligence originally applied to Gemini, not
+assumed to transfer. Also note: Groq's *strict* JSON-schema mode (100%-guaranteed structural
+adherence) is currently limited to GPT-OSS/Qwen models on Groq, not Llama - see `llmClient.js`.
+Llama's schema-following is best-effort, validated by the same Zod `.parse()` safety net the app
+already relied on with Gemini, not a new risk introduced by the switch.
+
+If you exhaust Groq's quota, the API returns a `429`; `MOCK_MODE=true` keeps the app fully
+demoable while you wait. `GROQ_MODEL=llama-3.1-8b-instant` in `.env` trades reasoning quality for
+an even higher daily cap (14,400/day) if that tradeoff is ever worth making — see current limits
+at [console.groq.com/docs/rate-limits](https://console.groq.com/docs/rate-limits).
 
 ## Security & rate limiting
 
@@ -121,11 +141,11 @@ may offer a higher daily cap in exchange for lower quality.
   entries — defense in depth against a request quietly costing far more than intended.
 - **No secrets committed.** `.env` and `.claude/settings.local.json` are gitignored;
   `.env.example` documents the shape without real values.
-- **Retries with backoff on transient provider errors.** The free tier's newer/high-demand
-  models occasionally return `503` (overloaded) or `429` (rate limited) briefly before
-  succeeding on retry - `generateContentWithRetry()` in `server/llmClient.js` retries those
-  specifically (up to 3x, exponential backoff), and only those - a `400` (bad request) fails
-  immediately rather than retrying a request that will never succeed.
+- **Retries with backoff on transient provider errors.** A free tier occasionally returns `429`
+  (rate limited) or a `5xx` (server-side issue) briefly before succeeding on retry -
+  `createChatCompletionWithRetry()` in `server/llmClient.js` retries those specifically (up to
+  3x, exponential backoff), and only those - a `400` (bad request) fails immediately rather than
+  retrying a request that will never succeed.
 - **PRD generation has a hard anti-hallucination guardrail.** Early testing surfaced the model
   inventing plausible-sounding but fake numbers (e.g. "1,200 active users") in the PRD prose.
   The system prompt in `server/routes/prd.js` now restricts it to only the exact
@@ -193,10 +213,10 @@ the UI — without needing an API key or spending anything on LLM calls during d
 **Why structured outputs (Zod schemas) instead of asking the model to "return JSON".**
 `server/schemas.js` defines the exact shape expected back from the clustering and
 prioritization calls. Zod v4's built-in `z.toJSONSchema()` converts those schemas into the JSON
-Schema Gemini's `responseSchema` config expects (see `toGeminiSchema()` in
-`server/llmClient.js`), and the response is validated against the same Zod schema again on the
-way back in. One schema drives both the request and the validation — nothing is duplicated by
-hand, and there's no free-text JSON to parse/repair.
+Schema Groq's `response_format: {type: "json_schema", ...}` config expects (see
+`toGroqResponseFormat()` in `server/llmClient.js`), and the response is validated against the
+same Zod schema again on the way back in. One schema drives both the request and the
+validation — nothing is duplicated by hand, and there's no free-text JSON to parse/repair.
 
 **Why the PRD has a Proposed Solution and a Scope section, and why the pipeline has a Roadmap
 Summary step before the PRD (v1.1).**
@@ -269,8 +289,9 @@ change in the project's history and worth walking through as a sequence, not jus
      structurally cannot become a second classifier capable of the same mistake.
   `buildEvidence()` then builds `supporting_item_numbers` and `frequency` entirely from
   classifications that passed *both* gates - never from anything a single model call asserts about
-  itself. **The real cost of this**: clustering now takes 3 LLM calls instead of 1, which matters a
-  lot on a 20/day free-tier quota - see the honest note on that below.
+  itself. **The real cost of this**: clustering now takes 3 LLM calls instead of 1 - a real
+  quota/latency cost regardless of provider, and specifically what motivated the move from Gemini
+  to Groq below once it collided with Gemini's 20/day free-tier limit.
 
 **Why `unclassified` is mandatory, not a fallback - and why an unclassified item shows a reason,
 not just a bare label (v1.4).**
@@ -285,7 +306,7 @@ so it's never confused with an AI decision.
 
 **Why classification "fit" is the word used, not "confidence" - and why low/medium get a visible
 warning, not just a number.**
-Gemini doesn't actually know there's a 96% probability it's correct, so labeling a score
+The model doesn't actually know there's a 96% probability it's correct, so labeling a score
 "confidence" implies an objectivity it doesn't have. Every accepted classification carries a 0-1
 fit score, bucketed in code (`fitBucket()`) into **strong** or **moderate** - deliberately bucketed
 server-side with fixed thresholds rather than trusting the model's own qualitative self-labeling,
@@ -320,28 +341,27 @@ UI, irrelevant to RICE scoring, and just extra tokens on a free tier where the d
 turned out to be tight enough to matter (see below). `prioritize.js` sends a trimmed copy to the
 model and merges the RICE result back onto the full original objects.
 
-**A live-testing finding worth being upfront about: the free tier's quota is easy to exhaust
-faster than the raw daily number suggests, and v1.4 made that materially worse.** Retrying a
-transient `503` (which `llmClient.js` does automatically, up to 3x) still counts each attempt
-against the same daily quota - so a model under heavy load doesn't just fail slowly, it burns
-through the budget faster per logical request. On top of that, v1.4's clustering step alone now
-costs 3 calls instead of 1 (discovery, classification, validation), so a full analysis run costs
-5 calls total (cluster + prioritize + PRD) against a 20/day limit - roughly 4 full runs/day in the
-best case, fewer under any retry pressure. This isn't fixable from this app's side; it's a real
-constraint of building on a free, shared model, and the actual tradeoff this project makes:
-precision over throughput, deliberately, per the v1.4 design goal.
+**A live-testing finding that directly caused the Gemini → Groq switch (v1.5).** Retrying a
+transient `503` (which `llmClient.js` already did automatically, up to 3x) still counted each
+attempt against the same daily quota under Gemini - so a model under heavy load didn't just fail
+slowly, it burned through the budget faster per logical request. Combined with v1.4's clustering
+step costing 3 calls instead of 1, a full analysis run cost 5 calls total (cluster + prioritize +
+PRD) against Gemini's 20/day limit - roughly 4 full runs/day in the best case, fewer under any
+retry pressure, and full analysis runs were regularly taking 60+ seconds. That combination of
+slow *and* quota-starved (rather than either alone) is what made switching providers the right
+call instead of tuning retry constants - see **Why Groq instead of a paid API** above for the
+actual comparison and the tradeoff it introduces.
 
 **`adversarial-100.txt`** is a 100-item stress-test dataset (not blended into the main sample data)
 covering obvious matches, genuinely overlapping themes, incidental keyword mentions, multi-issue
 complaints, vague complaints, unrelated feedback, sarcasm/contradictory wording, one-line
-feedback, and long multi-concept paragraphs - built specifically to validate v1.4's classification
+feedback, and long multi-concept paragraphs - built specifically to validate the classification
 architecture against edge cases beyond the original bug report. The full three-call pipeline and
 code-side gating logic were verified thoroughly in `MOCK_MODE` (all three `unclassified` reasons,
-the accept/reject boundary, keyword sanity flagging, and manual reassignment all pass); live
-validation against real Gemini output was blocked mid-session by the same daily quota exhausted
-during v1.3 testing earlier the same day, confirmed via a direct minimal-request check rather than
-assumed. Running `adversarial-100.txt` through the live pipeline once quota resets is the natural
-next verification step.
+the accept/reject boundary, keyword sanity flagging, and manual reassignment all pass) before the
+Groq switch; running it through the live Groq pipeline - to verify Llama's classification quality
+holds up the way Gemini's was verified to - is the natural next step once a real `GROQ_API_KEY`
+is in place.
 
 **Why there's no database.**
 Scoped as a single-session demo (v1) — state lives in the browser's JS memory for the
@@ -352,7 +372,7 @@ session. A next iteration would persist analyses so a PM could revisit or compar
 ```
 server/
   index.js              Express app: helmet, rate limiting, serves public/, mounts the 3 routes
-  llmClient.js            Gemini client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
+  llmClient.js            Groq client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
   schemas.js              Zod schemas shared by the cluster & prioritize routes
   feedbackItems.js         Splits raw feedback into the numbered items themes trace back to
   routes/
@@ -370,11 +390,12 @@ adversarial-100.txt       100-item classification stress test (see v1.4 notes ab
 ## Tech stack
 
 - Node.js + Express (serves the static frontend and proxies the 3 LLM calls — a backend is
-  required so the Gemini API key never reaches the browser), `helmet` for security headers,
+  required so the Groq API key never reaches the browser), `helmet` for security headers,
   `express-rate-limit` for per-IP rate limiting
-- `@google/genai`, model `gemini-3.6-flash` (Google AI Studio free tier, no credit card).
-  Google's free-tier lineup shifts over time - if `server/llmClient.js`'s `MODEL` constant
-  ever 404s, the API error message names the current replacement model directly; swap it in.
+- `groq-sdk`, model `llama-3.3-70b-versatile` (Groq free tier, no credit card) - runs on Groq's
+  LPU hardware for low-latency inference, chosen specifically to fix multi-minute analysis waits
+  hit under Gemini (see **Why Groq instead of a paid API** above). Overridable via `GROQ_MODEL`
+  in `.env` without a code change if a future model swap or deprecation is ever needed.
 - Zod v4, for schema-driven structured output (`z.toJSONSchema()`) and response validation
 - Plain HTML/CSS/JS frontend, no framework or build step (`marked.js` via CDN for rendering
   the PRD's Markdown)
