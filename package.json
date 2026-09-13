@@ -4,6 +4,9 @@
   "description": "Turns messy user feedback into a clustered, RICE-prioritized, stakeholder-ready roadmap with an auto-drafted PRD.",
   "type": "module",
   "main": "server/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js"

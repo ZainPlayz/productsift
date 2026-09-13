@@ -63,7 +63,31 @@ Open [http://localhost:3000](http://localhost:3000). Click **Load Sample Data** 
 instantly with the bundled `sample-feedback.txt` (fictional feedback for a task-management app).
 
 Use `npm run dev` instead of `npm start` during development — it auto-restarts the server on
-file changes (`node --watch`).
+file changes (`node --watch`). Note: `--watch`'s file-watcher has been unreliable in some Windows
+setups during this project's development (spurious restarts, occasional unexplained exits) - if
+the dev server keeps dying for no obvious reason, fall back to plain `npm start` and restart
+manually after edits.
+
+## Deploy
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ZainPlayz/productsift)
+
+This repo includes a `render.yaml` blueprint, so Render auto-detects the service config. Three
+steps to go live:
+
+1. Click the button above (or **New +** → **Blueprint** on [Render](https://dashboard.render.com)
+   and point it at this repo).
+2. When prompted, add `GEMINI_API_KEY` as an environment variable (Render's blueprint flow asks
+   for any var marked `sync: false` — the key never gets committed to the repo).
+3. Deploy. Render builds with `npm install` and starts with `npm start`.
+
+**Public deployments default to `MOCK_MODE=true`** (set in `render.yaml`) — a shared free-tier
+Gemini quota (20 requests/day) would otherwise be exhausted by the first few visitors clicking
+around, breaking the demo for everyone including you. Flip it to `false` in the Render dashboard
+if you want a specific deployment to run real live analysis instead, understanding that tradeoff.
+
+Any other Node host works too (Railway, Fly.io, etc.) — the app only needs `npm install` /
+`npm start`, a `PORT` env var (already read from `process.env.PORT`), and the two vars above.
 
 ## Why Gemini instead of a paid API
 
