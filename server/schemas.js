@@ -60,10 +60,17 @@ export const ThemeDefinitionSchema = z.object({
         "issues' but 'Crashes, freezes, or unexpected termination of the mobile app specifically - " +
         "not general slowness (that's Performance) and not notification content (that's Notifications).'",
     ),
+  // max is intentionally loose (8, not the "2-6" the prompt asks for): Groq's
+  // strict mode was found live to not fully enforce array maxItems even with
+  // strict:true (a real gap in "100% schema adherence" - it generated 7 for
+  // a max(6) schema, rejected by our own Zod validation with no useful
+  // recourse). Since keywords are purely informational (never a gate - see
+  // hasKeywordOverlap in cluster.js), a slightly loose cap costs nothing;
+  // it's cheaper than fighting an enforcement gap that isn't ours to fix.
   keywords: z
     .array(z.string())
     .min(2)
-    .max(6)
+    .max(8)
     .describe(
       "2-6 short words/phrases a primary issue truly belonging to this theme would typically contain " +
         "(e.g. 'slow', 'lag', 'freeze' for a performance theme). Used only as a secondary sanity check " +
@@ -134,6 +141,11 @@ export const ValidationResponseSchema = z.object({
     .describe("EXACTLY one entry per item being validated, in the same order given."),
 });
 
+// Maps the model's qualitative impact_label to the numeric RICE multiplier -
+// see the comment on impact_label below for why this is a label, not a
+// number, in the schema itself.
+export const IMPACT_SCALE = { minimal: 0.25, low: 0.5, medium: 1, high: 2, massive: 3 };
+
 // RICE = (Reach x Impact x Confidence) / Effort. The model estimates only
 // these four inputs with reasoning - never the theme's identity fields
 // (name/summary/severity/etc), which prioritize.js re-attaches from the
@@ -153,9 +165,21 @@ export const RiceEstimateSchema = z.object({
         "theme's summary and severity as evidence for how widespread the underlying problem likely is.",
     ),
   reach_reasoning: z.string(),
-  impact: z
-    .union([z.literal(0.25), z.literal(0.5), z.literal(1), z.literal(2), z.literal(3)])
-    .describe("RICE impact scale: 0.25 minimal, 0.5 low, 1 medium, 2 high, 3 massive"),
+  // A union of numeric literals (0.25/0.5/1/2/3) worked fine as JSON Schema
+  // for Gemini's best-effort structured output, but Groq's *strict* mode
+  // compiler rejected it live ("cannot include both 'integer' and 'number'")
+  // when mixing whole and fractional consts under one property - a real
+  // constraint found by testing against the actual API, not assumed. A
+  // string enum sidesteps the ambiguity entirely; prioritize.js maps the
+  // label to its numeric RICE multiplier via IMPACT_SCALE below, the same
+  // "model gives a judgment, code computes the number" pattern rice_score
+  // already uses.
+  impact_label: z
+    .enum(["minimal", "low", "medium", "high", "massive"])
+    .describe(
+      "RICE impact scale, how much fixing this would move the needle for an affected user: " +
+        "minimal, low, medium, high, or massive.",
+    ),
   impact_reasoning: z.string(),
   confidence: z
     .number()

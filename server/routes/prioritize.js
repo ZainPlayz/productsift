@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { MODEL, MOCK_MODE, toGroqResponseFormat, createChatCompletionWithRetry } from "../llmClient.js";
-import { PrioritizeResponseSchema } from "../schemas.js";
+import { PrioritizeResponseSchema, IMPACT_SCALE } from "../schemas.js";
 import { mockPrioritizeThemes } from "../mocks/fixtures.js";
 
 const router = Router();
@@ -17,9 +17,9 @@ in the exact order given, estimate:
   A theme raised by 3 feedback items could still plausibly affect thousands of silent users if
   the underlying problem (e.g. a core workflow) is broad enough - or barely extend past those
   3 people if it's a narrow edge case. Say which case this is and why in reach_reasoning.
-- impact: one of 0.25 (minimal), 0.5 (low), 1 (medium), 2 (high), 3 (massive) - how much
-  fixing this theme would move the needle for an affected user. Should track the theme's
-  severity but use your judgment, not a rigid lookup.
+- impact_label: one of minimal, low, medium, high, massive - how much fixing this theme would
+  move the needle for an affected user. Should track the theme's severity but use your
+  judgment, not a rigid lookup.
 - confidence: 0-100, how confident you are in the reach/impact estimates given the evidence
   in the theme (a theme with many consistent quotes deserves higher confidence than one with
   a single ambiguous mention). Be honest when the evidence for reach specifically is thin -
@@ -118,7 +118,10 @@ async function prioritizeWithGroq(themes) {
       `Model returned ${parsed.themes.length} RICE estimates for ${themes.length} input themes.`,
     );
   }
-  return parsed.themes;
+  // Translate impact_label to its RICE multiplier here, so this function
+  // returns the same shape mockPrioritizeThemes() does and the merge step
+  // in the route handler below doesn't need to know which path produced it.
+  return parsed.themes.map((t) => ({ ...t, impact: IMPACT_SCALE[t.impact_label] }));
 }
 
 export default router;

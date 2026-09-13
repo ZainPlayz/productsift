@@ -75,6 +75,12 @@ async function discoverThemes(items) {
       { role: "user", content: `Numbered feedback batch:\n\n${numberedList}` },
     ],
     response_format: toGroqResponseFormat(DiscoveryResponseSchema, "discovery_response"),
+    // Tuned empirically against the real API: this call's own input is small
+    // (just the raw numbered list) but its output is verbose (a primary_issue
+    // per item AND full theme definitions+keywords+quotes), so it needs more
+    // headroom than the free tier's default gives it without it, without
+    // pushing input+completion over the 8,000 TPM ceiling.
+    max_completion_tokens: 6000,
   });
   return DiscoveryResponseSchema.parse(JSON.parse(response.choices[0].message.content));
 }
@@ -106,6 +112,16 @@ async function classifyIssues(itemPrimaryIssues, themes) {
       },
     ],
     response_format: toGroqResponseFormat(ClassificationResponseSchema, "classification_response"),
+    // Tuned empirically (this number moved twice): 3000 silently under-
+    // covered a 52-item batch - strict mode's constrained decoding appears
+    // to auto-close the JSON array when it runs out of budget rather than
+    // erroring, so the response was valid-but-incomplete (only ~22 of 52
+    // items), and every item past that point fell through to this app's own
+    // "no classification returned for this item" -> unclassified fallback.
+    // That fallback did its job (nothing got a wrong answer), but it's not
+    // the same as a real judgment - worth calling out because it's a subtle
+    // failure mode: no error was thrown, just silently thin coverage.
+    max_completion_tokens: 5000,
   });
   const parsed = ClassificationResponseSchema.parse(JSON.parse(response.choices[0].message.content));
   return parsed.classifications;

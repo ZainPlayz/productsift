@@ -102,28 +102,80 @@ during development, for two concrete, measured reasons rather than a hunch:
    sells; it's the direct fix for "analysis takes too long," not a workaround.
 2. **Quota.** Gemini's free tier allowed **20 requests/day** — confirmed by hitting it more than
    once during development (each full run costs 5 requests: 3 for clustering's discover/classify/
-   validate pipeline, 1 for prioritize, 1 for PRD, so ~4 full runs/day). Groq's free tier for
-   `llama-3.3-70b-versatile` allows **1,000 requests/day** — about 200 full runs/day, roughly a
-   50x improvement, without changing anything about the three-call architecture that caused the
-   original quota pressure.
+   validate pipeline, 1 for prioritize, 1 for PRD). Groq's free tier for the model this project
+   settled on allows **1,000 requests/day** — about 200 full runs/day, roughly a 50x improvement,
+   without changing anything about the three-call architecture that caused the original quota
+   pressure.
 
 Both are free, no-credit-card tiers, which matters for a project you re-run constantly while
 building and demoing it — the rate-limiting practices below (per-IP limits, retry-with-backoff)
 apply the same way regardless of provider.
 
-**One tradeoff worth being upfront about**: Groq serves open-weight models (Llama, in this
-project's case), not Gemini's proprietary flash models — a genuinely different model, not just a
-faster host for the same one. Output quality (RICE reasoning, PRD prose, classification judgment)
-needed to be re-verified after the switch, the same diligence originally applied to Gemini, not
-assumed to transfer. Also note: Groq's *strict* JSON-schema mode (100%-guaranteed structural
-adherence) is currently limited to GPT-OSS/Qwen models on Groq, not Llama - see `llmClient.js`.
-Llama's schema-following is best-effort, validated by the same Zod `.parse()` safety net the app
-already relied on with Gemini, not a new risk introduced by the switch.
+**The model actually used isn't Llama, despite that being the original plan** - a live check
+against `groq.models.list()` with a real key showed no Llama chat model currently available on
+Groq, only GPT-OSS, Qwen, and a few non-chat models (this changed at some point after the
+research that suggested Llama would be there; live API state beat search results). Of what's
+actually available, `openai/gpt-oss-120b` is both the largest general-purpose option and one of
+only two model families on Groq that support *strict* JSON-schema mode (100%-guaranteed
+structural adherence via constrained decoding) - a genuine reliability upgrade over what Llama's
+best-effort schema-following would have given this project, not just a fallback choice.
+
+**What live testing against gpt-oss-120b actually found - the honest version, not just the best
+number:**
+
+- **Small/typical batches are dramatically faster and more reliable.** A 5-item batch: full
+  3-call cluster + prioritize + PRD pipeline in ~10 seconds total, vs. the 60+ seconds (or
+  outright failure) that was routine under Gemini.
+- **`gpt-oss-120b` is a *reasoning* model** (per its own metadata - `"supported_features":
+  ["reasoning", ...]`), which trades speed for quality via hidden reasoning tokens before the
+  visible answer. This scales worse than linearly with batch size: the bundled 52-item
+  `sample-feedback.txt` (a deliberately large stress-test-sized dataset) took over a minute even
+  after fixing the bugs below, and a realistic 19-item batch took 35-48 seconds in clean,
+  uncontended tests - real improvement over Gemini's failure-prone 60+ seconds, but not the same
+  order-of-magnitude win the 5-item case shows. `qwen/qwen3.8-27b` is the other strict-mode
+  option on Groq and is untested here - worth trying if large-batch latency matters more than
+  what's already been verified.
+- **Three real bugs were found and fixed by testing against the live API, not assumed away:**
+  1. With no `max_completion_tokens` set, a 52-item discovery call generated all 52 extracted
+     issues completely, then hit the API's implicit output cap before generating the required
+     `themes` field - strict mode correctly rejected the incomplete JSON as a 400 rather than
+     returning bad data, but the real fix was giving generation enough room to finish.
+  2. The free tier's tokens-per-minute limit for this model is a tight **8,000 TPM**, checked as
+     input + reserved `max_completion_tokens` *before* generation starts - so naively setting the
+     completion budget high enough to fix #1 (e.g. 8000) backfired as a `413` on exactly the
+     large-batch requests it was meant to help, especially for classification, whose *input*
+     (every primary issue plus every theme definition) is already substantial. Each call in
+     `cluster.js` now has its own tuned `max_completion_tokens`, sized empirically to that call's
+     actual input/output profile within the shared 8,000 TPM ceiling.
+  3. A subtler failure mode: when classification's budget was still slightly too tight for a
+     52-item batch, the response came back as *valid* JSON covering only the first ~22 items -
+     strict mode's constrained decoding appears to auto-close the JSON array when it runs out of
+     room rather than erroring. This app's own defensive fallback (any item with no
+     classification returned defaults to `unclassified`) meant nothing got a *wrong* answer, but
+     30 items that should have matched clear themes went unclassified with no error thrown
+     anywhere - a real gap between "the request succeeded" and "the result was actually
+     complete," worth knowing about if output coverage ever looks suspiciously thin.
+  4. Groq's *strict* mode doesn't fully enforce every JSON Schema keyword despite the "100%
+     guaranteed" framing - it generated 7 items for an array schema capped at `max(6)` (the
+     `keywords` field), rejected by this app's own Zod validation. Since `keywords` is only ever
+     an informational sanity-check (never a gate - see `hasKeywordOverlap` in `cluster.js`), the
+     schema cap was loosened to `max(8)` rather than fighting an enforcement gap that isn't this
+     app's to fix.
+- **A union of numeric literals (Zod `z.union([z.literal(0.25), ...])`) worked fine as JSON
+  Schema for Gemini's best-effort mode, but Groq's strict-mode compiler rejected it live**
+  (`"cannot include both 'integer' and 'number'"` when mixing whole and fractional consts under
+  one property). Fixed by having the model return a qualitative `impact_label` (minimal/low/
+  medium/high/massive) instead of a raw number, with code mapping the label to its RICE
+  multiplier via `IMPACT_SCALE` in `schemas.js` - the same "model gives a judgment, code computes
+  the number" pattern `rice_score` itself already used.
 
 If you exhaust Groq's quota, the API returns a `429`; `MOCK_MODE=true` keeps the app fully
-demoable while you wait. `GROQ_MODEL=llama-3.1-8b-instant` in `.env` trades reasoning quality for
-an even higher daily cap (14,400/day) if that tradeoff is ever worth making — see current limits
-at [console.groq.com/docs/rate-limits](https://console.groq.com/docs/rate-limits).
+demoable while you wait. `GROQ_MODEL=qwen/qwen3.8-27b` in `.env` is the other strict-mode-capable
+model currently on Groq's free tier, worth trying if `gpt-oss-120b`'s reasoning-model latency on
+large batches (see above) matters more than what's already been verified with it — check current
+model availability and limits at
+[console.groq.com/docs/rate-limits](https://console.groq.com/docs/rate-limits), since this has
+already changed once during this project's own development.
 
 ## Security & rate limiting
 
@@ -358,10 +410,11 @@ complaints, vague complaints, unrelated feedback, sarcasm/contradictory wording,
 feedback, and long multi-concept paragraphs - built specifically to validate the classification
 architecture against edge cases beyond the original bug report. The full three-call pipeline and
 code-side gating logic were verified thoroughly in `MOCK_MODE` (all three `unclassified` reasons,
-the accept/reject boundary, keyword sanity flagging, and manual reassignment all pass) before the
-Groq switch; running it through the live Groq pipeline - to verify Llama's classification quality
-holds up the way Gemini's was verified to - is the natural next step once a real `GROQ_API_KEY`
-is in place.
+the accept/reject boundary, keyword sanity flagging, and manual reassignment all pass), and
+separately against live `gpt-oss-120b` output at multiple scales (5, 19, and 52 items - see **Why
+Groq instead of a paid API** above for what that testing actually found, bugs and all). Running
+`adversarial-100.txt` specifically through the live pipeline - the full 100-item adversarial set,
+not just the sample data - remains the natural next verification step.
 
 **Why there's no database.**
 Scoped as a single-session demo (v1) — state lives in the browser's JS memory for the
@@ -392,10 +445,13 @@ adversarial-100.txt       100-item classification stress test (see v1.4 notes ab
 - Node.js + Express (serves the static frontend and proxies the 3 LLM calls — a backend is
   required so the Groq API key never reaches the browser), `helmet` for security headers,
   `express-rate-limit` for per-IP rate limiting
-- `groq-sdk`, model `llama-3.3-70b-versatile` (Groq free tier, no credit card) - runs on Groq's
-  LPU hardware for low-latency inference, chosen specifically to fix multi-minute analysis waits
-  hit under Gemini (see **Why Groq instead of a paid API** above). Overridable via `GROQ_MODEL`
-  in `.env` without a code change if a future model swap or deprecation is ever needed.
+- `groq-sdk`, model `openai/gpt-oss-120b` (Groq free tier, no credit card) - runs on Groq's LPU
+  hardware for low-latency inference, chosen specifically to fix multi-minute analysis waits hit
+  under Gemini, and one of only two model families on Groq with *strict* JSON-schema support
+  (see **Why Groq instead of a paid API** above for the full story, including the real bugs found
+  tuning this integration and the honest large-batch latency finding). Overridable via
+  `GROQ_MODEL` in `.env` without a code change if a future model swap or deprecation is ever
+  needed - which has now happened once already, going from the originally-planned Llama to this.
 - Zod v4, for schema-driven structured output (`z.toJSONSchema()`) and response validation
 - Plain HTML/CSS/JS frontend, no framework or build step (`marked.js` via CDN for rendering
   the PRD's Markdown)
