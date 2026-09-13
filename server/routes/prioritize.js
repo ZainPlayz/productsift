@@ -110,6 +110,13 @@ async function prioritizeWithGroq(themes) {
       { role: "user", content: `Score these themes using RICE:\n\n${JSON.stringify(forPrompt, null, 2)}` },
     ],
     response_format: toGroqResponseFormat(PrioritizeResponseSchema, "prioritize_response"),
+    // The wrapper's 2000-token default (see llmClient.js) was found live to
+    // be too small once theme count grows - a 12-theme batch either
+    // returned fewer RICE estimates than themes given, or occasionally
+    // nothing at all. 4 reasoning sentences per theme adds up faster than
+    // it looks; this leaves real headroom under the 8,000 TPM ceiling
+    // alongside reasoning_effort:"low" (set by default in llmClient.js).
+    max_completion_tokens: 4000,
   });
 
   const parsed = PrioritizeResponseSchema.parse(JSON.parse(response.choices[0].message.content));

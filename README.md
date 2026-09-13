@@ -128,14 +128,15 @@ number:**
   outright failure) that was routine under Gemini.
 - **`gpt-oss-120b` is a *reasoning* model** (per its own metadata - `"supported_features":
   ["reasoning", ...]`), which trades speed for quality via hidden reasoning tokens before the
-  visible answer. This scales worse than linearly with batch size: the bundled 52-item
-  `sample-feedback.txt` (a deliberately large stress-test-sized dataset) took over a minute even
-  after fixing the bugs below, and a realistic 19-item batch took 35-48 seconds in clean,
-  uncontended tests - real improvement over Gemini's failure-prone 60+ seconds, but not the same
-  order-of-magnitude win the 5-item case shows. `qwen/qwen3.8-27b` is the other strict-mode
-  option on Groq and is untested here - worth trying if large-batch latency matters more than
-  what's already been verified.
-- **Three real bugs were found and fixed by testing against the live API, not assumed away:**
+  visible answer. This scales worse than linearly with batch size: even after setting
+  `reasoning_effort: "low"` (bug #5 below - the fix for correctness, not primarily for speed),
+  the bundled 52-item `sample-feedback.txt` (a deliberately large stress-test-sized dataset) still
+  took over a minute, while a 12-theme prioritize call on that same batch completed in ~20
+  seconds. Small/typical batches remain the dramatic win; large batches are now *correct*
+  (previously they weren't even that) but still genuinely slow. `qwen/qwen3.8-27b` is the other
+  strict-mode option on Groq and is untested here - worth trying if large-batch latency matters
+  more than what's already been verified.
+- **Several real bugs were found and fixed by testing against the live API, not assumed away:**
   1. With no `max_completion_tokens` set, a 52-item discovery call generated all 52 extracted
      issues completely, then hit the API's implicit output cap before generating the required
      `themes` field - strict mode correctly rejected the incomplete JSON as a 400 rather than
@@ -161,6 +162,18 @@ number:**
      an informational sanity-check (never a gate - see `hasKeywordOverlap` in `cluster.js`), the
      schema cap was loosened to `max(8)` rather than fighting an enforcement gap that isn't this
      app's to fix.
+  5. **The real root cause behind #1-#3, found after initial testing looked clean but real usage
+     immediately surfaced "many items unclassified" and RICE prioritization failing outright**:
+     `gpt-oss` models default to `reasoning_effort: "medium"`, meaning a real, variable chunk of
+     every `max_completion_tokens` budget was going to hidden reasoning tokens the app never sees,
+     not the visible JSON output it actually needs - tightening the visible-output budget without
+     accounting for this was fighting the wrong variable, no matter how carefully each number was
+     tuned. None of this app's calls are the kind of multi-step problem reasoning effort is meant
+     for (they're well-specified extraction/classification/scoring), so `reasoning_effort: "low"`
+     is now set as the default for every call in `llmClient.js` - confirmed live to fully resolve
+     both symptoms: the 52-item sample batch that previously left 30 items unclassified now
+     classifies all 52 with zero left over, and a 12-theme prioritize call that previously
+     returned too few estimates (or nothing at all) now reliably returns all of them.
 - **A union of numeric literals (Zod `z.union([z.literal(0.25), ...])`) worked fine as JSON
   Schema for Gemini's best-effort mode, but Groq's strict-mode compiler rejected it live**
   (`"cannot include both 'integer' and 'number'"` when mixing whole and fractional consts under

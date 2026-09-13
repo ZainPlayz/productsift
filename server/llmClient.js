@@ -51,25 +51,24 @@ function isRetryableStatus(status) {
 // 429, so retrying only 429/5xx, with backoff, and only a bounded number of
 // times, turns a transient blip into a reliable response without masking a
 // real outage.
-// Found live, not assumed: with no max_completion_tokens set, a 52-item
-// discovery call (see cluster.js) generated all 52 primary_issue entries
-// completely, then hit the API's default output cap before generating the
-// required "themes" field - strict mode correctly rejected the resulting
-// incomplete JSON as a 400 rather than silently returning bad data.
 //
-// The fix has two parts, both found by testing against the real API rather
-// than picking one number and hoping: the free tier's tokens-per-minute
-// limit for this model is a tight 8,000 TPM, checked as input tokens PLUS
-// reserved max_completion_tokens BEFORE generation even starts - so a single
-// uniform "just set it high" default backfires as a 413 on exactly the
-// large-batch requests it's meant to help, especially for a call like
-// classification whose *input* (primary issues + theme definitions) is
-// already substantial. Each cluster.js call therefore passes its own tuned
-// max_completion_tokens sized to what that specific call actually needs
-// (see cluster.js); this default only covers the smaller calls
-// (prioritize, PRD) that don't scale with batch size.
+// Found live, not assumed: with the default reasoning_effort ("medium" for
+// gpt-oss models), the model was spending a large, variable chunk of
+// max_completion_tokens on hidden reasoning before emitting any visible
+// JSON - not just the visible output this app actually needs. That caused
+// real symptoms: discovery/classification calls truncating mid-array on
+// larger batches (leaving items to silently fall through to unclassified,
+// no error thrown), and prioritize sometimes returning fewer RICE estimates
+// than themes given, or occasionally emitting nothing at all
+// (failed_generation: "" - the entire budget spent reasoning). None of our
+// tasks here are the kind of multi-step problem reasoning effort is for -
+// they're well-specified extraction/classification/scoring jobs - so
+// reasoning_effort: "low" is the actual fix: less of the token budget goes
+// to invisible thinking, more goes to the JSON output this app depends on,
+// and it's faster too. Tightening max_completion_tokens without this first
+// was fighting the wrong variable.
 export async function createChatCompletionWithRetry(params, { retries = 3, baseDelayMs = 1000 } = {}) {
-  const requestParams = { max_completion_tokens: 2000, ...params };
+  const requestParams = { max_completion_tokens: 2000, reasoning_effort: "low", ...params };
   for (let attempt = 0; ; attempt++) {
     try {
       return await groq.chat.completions.create(requestParams);
