@@ -115,7 +115,7 @@ body,
 textarea,
 .rice-input,
 .reassign-select,
-.decision-select,
+.decision-btn,
 th,
 td,
 .mode-banner,
@@ -536,22 +536,36 @@ tr.rank-1 td { background: var(--accent); font-weight: 600; }
 
 .decision-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   margin: 12px 0 4px;
 }
 
 .decision-label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
 
-.decision-select {
-  padding: 6px 8px;
+.decision-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.decision-btn {
+  padding: 5px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.85rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
   font-family: inherit;
-  background: var(--input-bg);
-  color: var(--text);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
+
+.decision-btn:hover { border-color: var(--primary); color: var(--text); }
+
+.decision-btn-build.active { background: var(--tint-green); color: var(--severity-low); border-color: var(--severity-low); }
+.decision-btn-investigate.active { background: var(--tint-amber); color: var(--severity-mid); border-color: var(--severity-mid); }
+.decision-btn-defer.active { background: var(--tint-neutral); color: var(--text-muted); border-color: var(--border); }
+.decision-btn-reject.active { background: var(--tint-red); color: var(--severity-high); border-color: var(--severity-high); }
+
+.decision-hint { font-size: 0.78rem; color: var(--text-muted); font-style: italic; margin: 0; }
 
 .decision-print-only { display: none; }
 
@@ -694,8 +708,9 @@ table { font-size: 14px; }
 .recommended-badge { font-size: 12px; border: 0; padding: 7px 12px; margin-bottom: 18px; }
 .why-panel, .sensitivity-panel { padding: 20px; border-radius: 14px; }
 .why-panel strong, .sensitivity-panel strong { text-transform: none; font-size: 14px; letter-spacing: 0; }
-.decision-label, .decision-select { font-size: 14px; }
-.decision-select { padding: 10px; }
+.decision-label { font-size: 14px; }
+.decision-btn { font-size: 13px; padding: 7px 14px; }
+.decision-hint { font-size: 13px; }
 .prd-doc { border-radius: 16px; padding: 32px; line-height: 1.75; }
 .prd-doc h2 { font-size: 22px; margin-top: 32px; padding-bottom: 12px; }
 .workspace-footer { font-size: 12px; color: var(--text-muted); text-align: center; padding: 18px; }
@@ -768,7 +783,7 @@ table { font-size: 14px; }
   main { max-width: none; padding: 0; }
   .card { border: none; box-shadow: none; padding: 8px 0; break-inside: avoid; }
   .app-header { border-bottom: 2px solid black; }
-  .decision-select, .reasoning-toggle, .evidence-toggle { display: none !important; }
+  .decision-buttons, .decision-hint, .reasoning-toggle, .evidence-toggle { display: none !important; }
   .decision-print-only { display: inline; font-size: 0.85rem; font-weight: 600; }
   .evidence-print-only { display: inline; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
   .evidence-list.hidden { display: block !important; } /* print full evidence even if collapsed on screen */

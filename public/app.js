@@ -10,6 +10,19 @@ let lastPrdTheme = null; // the theme that PRD was generated for, for the decisi
 
 const DECISIONS = ["Build", "Investigate", "Defer", "Reject"];
 
+// Shown as a tooltip on each decision button AND as a one-line hint under the
+// button group once picked - a PM shouldn't have to already know this tool's
+// specific meaning for "Investigate" vs. "Defer" to use it correctly, and
+// the real point of the control (it changes how the PRD gets WRITTEN, not
+// just a label on a card) isn't obvious unless stated.
+const DECISION_INFO = {
+  Build: "Approved to move forward - the PRD will read as a commitment (\"we will build...\").",
+  Investigate: "Not yet approved - the PRD reads as a recommendation pending validation, with open questions on what to validate first.",
+  Defer: "Deprioritized, not rejected - the PRD documents it as a real problem worth revisiting later.",
+  Reject: "Considered and passed on - the PRD reads as a decision record, not a pitch.",
+};
+const DECISION_HINT_DEFAULT = "Choose a decision - it changes how the generated PRD is written, not just this card's label.";
+
 const $ = (id) => document.getElementById(id);
 
 const feedbackInput = $("feedbackInput");
@@ -583,12 +596,14 @@ function computeSensitivity(top, second) {
   return result;
 }
 
-function decisionSelectHtml(t) {
+function decisionControlHtml(t) {
+  const buttons = DECISIONS.map((d) => {
+    const active = t.decision === d;
+    return `<button type="button" class="decision-btn decision-btn-${d.toLowerCase()}${active ? " active" : ""}" data-decision="${d}" title="${escapeHtml(DECISION_INFO[d])}">${d}</button>`;
+  }).join("");
   return `
-    <select class="decision-select" aria-label="Decision">
-      <option value="" ${!t.decision ? "selected" : ""}>— Select decision —</option>
-      ${DECISIONS.map((d) => `<option value="${d}" ${t.decision === d ? "selected" : ""}>${d}</option>`).join("")}
-    </select>
+    <div class="decision-buttons" role="group" aria-label="Decision">${buttons}</div>
+    <p class="decision-hint">${escapeHtml(t.decision ? DECISION_INFO[t.decision] : DECISION_HINT_DEFAULT)}</p>
     <span class="decision-print-only">${t.decision ? escapeHtml(t.decision) : "not yet decided"}</span>
   `;
 }
@@ -639,16 +654,22 @@ function renderRoadmapSummary() {
       <p class="hint">${escapeHtml(t.definition)}</p>
       ${extra}
       <div class="decision-row">
-        <label class="decision-label">Decision:</label>
-        ${decisionSelectHtml(t)}
+        <span class="decision-label">Decision</span>
+        ${decisionControlHtml(t)}
       </div>
       <button type="button" class="btn btn-primary generate-prd-btn">Generate PRD</button>
     `;
 
-    card.querySelector(".decision-select").addEventListener("change", (e) => {
-      t.decision = e.target.value || null;
-      const printSpan = card.querySelector(".decision-print-only");
-      printSpan.textContent = t.decision || "not yet decided";
+    // Clicking the already-active decision clears it back to undecided -
+    // re-rendering (rather than patching classes/text in place) keeps this
+    // in sync with the button group, the hint line, and the print-only
+    // fallback in one place instead of updating each by hand.
+    card.querySelectorAll(".decision-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const value = btn.dataset.decision;
+        t.decision = t.decision === value ? null : value;
+        renderRoadmapSummary();
+      });
     });
 
     card.querySelector(".generate-prd-btn").addEventListener("click", (e) => {
