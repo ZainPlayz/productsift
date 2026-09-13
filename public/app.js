@@ -76,7 +76,28 @@ function setStatus(message, isError = false) {
 function setLoading(button, loading, label) {
   button.disabled = loading;
   button.dataset.label = button.dataset.label || button.textContent;
-  button.textContent = loading ? "Working..." : label || button.dataset.label;
+  if (loading) {
+    button.innerHTML = `<span class="spinner" aria-hidden="true"></span>Working...`;
+  } else {
+    button.textContent = label || button.dataset.label;
+  }
+}
+
+// Cycles the status banner through a few messages while a multi-step
+// backend call (e.g. clustering's discover -> classify -> validate pipeline)
+// is in flight - the server doesn't stream progress, so this doesn't make
+// the wait shorter, but a static "Clustering..." for 10+ seconds reads as
+// stuck, while a message that visibly changes reads as working. Returns a
+// function that stops the cycle; call it as soon as the awaited call settles,
+// before setting the final status message.
+function cycleStatus(messages, intervalMs = 2200) {
+  let i = 0;
+  setStatus(messages[0]);
+  const id = setInterval(() => {
+    i = (i + 1) % messages.length;
+    setStatus(messages[i]);
+  }, intervalMs);
+  return () => clearInterval(id);
 }
 
 async function postJSON(url, body) {
@@ -114,7 +135,7 @@ fileInput.addEventListener("change", async () => {
 analyzeBtn.addEventListener("click", async () => {
   const feedback = feedbackInput.value.trim();
   if (!feedback) {
-    setStatus("Paste some feedback first, or click 'Try sample feedback'.", true);
+    setStatus("Paste some feedback first, or click 'Load Sample Data'.", true);
     return;
   }
 
@@ -127,9 +148,14 @@ analyzeBtn.addEventListener("click", async () => {
   lastPrdTheme = null;
 
   setLoading(analyzeBtn, true);
-  setStatus("Clustering feedback into themes...");
+  const stopCycle = cycleStatus([
+    "Discovering themes...",
+    "Classifying feedback against each theme...",
+    "Double-checking uncertain classifications...",
+  ]);
   try {
     const data = await postJSON("/api/cluster", { feedback });
+    stopCycle();
     clusteredThemes = data.themes;
     feedbackItems = data.items;
     unclassifiedItems = data.unclassified_item_numbers ?? [];
@@ -142,6 +168,7 @@ analyzeBtn.addEventListener("click", async () => {
         (unclassifiedItems.length ? `, ${unclassifiedItems.length} unclassified.` : "."),
     );
   } catch (err) {
+    stopCycle();
     setStatus(err.message, true);
   } finally {
     setLoading(analyzeBtn, false);
@@ -615,7 +642,7 @@ function renderRoadmapSummary() {
         <label class="decision-label">Decision:</label>
         ${decisionSelectHtml(t)}
       </div>
-      <button type="button" class="btn btn-primary generate-prd-btn">Draft product brief</button>
+      <button type="button" class="btn btn-primary generate-prd-btn">Generate PRD</button>
     `;
 
     card.querySelector(".decision-select").addEventListener("change", (e) => {
@@ -711,8 +738,7 @@ function escapeHtml(str) {
     const { mockMode } = await res.json();
     if (mockMode) {
       modeBanner.hidden = false;
-      modeBanner.textContent =
-        "Demo mode · Explore the full workflow with sample results. Live AI analysis is off.";
+      modeBanner.textContent = "Demo mode: showing sample results, not live Gemini output.";
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */

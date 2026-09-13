@@ -12,42 +12,39 @@
   <a class="skip-link" href="#inputStage">Skip to workspace</a>
   <header class="app-header no-print">
     <a class="brand" href="#inputStage"><span class="brand-mark" aria-hidden="true">↗</span> Product<span class="brand-light">Sift</span></a>
-    <span class="header-caption">Feedback. Focus. Forward.</span>
     <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle dark mode"></button>
   </header>
   <div class="workspace-shell">
     <aside class="workflow no-print">
-      <p class="eyebrow">YOUR WORKSPACE</p>
+      <p class="eyebrow">WORKSPACE</p>
       <nav aria-label="Analysis steps" id="stepNav">
-        <button data-stage="inputStage" class="step active" aria-current="step"><span class="step-number">1</span><span>Feedback<small>Start with your users</small></span></button>
-        <button data-stage="themesStage" class="step" disabled><span class="step-number">2</span><span>Themes<small>Find the patterns</small></span></button>
-        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities<small>Weigh the impact</small></span></button>
-        <button data-stage="summaryStage" class="step" disabled><span class="step-number">4</span><span>Roadmap<small>Choose what’s next</small></span></button>
-        <button data-stage="prdStage" class="step" disabled><span class="step-number">5</span><span>Product brief<small>Turn intent into a plan</small></span></button>
-        <button data-stage="exportStage" class="step" disabled><span class="step-number">6</span><span>Export<small>Share your thinking</small></span></button>
+        <button data-stage="inputStage" class="step active" aria-current="step"><span class="step-number">1</span><span>Feedback</span></button>
+        <button data-stage="themesStage" class="step" disabled><span class="step-number">2</span><span>Themes</span></button>
+        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities</span></button>
+        <button data-stage="summaryStage" class="step" disabled><span class="step-number">4</span><span>Roadmap</span></button>
+        <button data-stage="prdStage" class="step" disabled><span class="step-number">5</span><span>PRD</span></button>
+        <button data-stage="exportStage" class="step" disabled><span class="step-number">6</span><span>Export</span></button>
       </nav>
-      <div class="workflow-note"><strong>Your judgment. Amplified.</strong><p>Review the evidence, adjust the estimates, and make the final call.</p></div>
     </aside>
     <main>
-      <div class="workspace-intro no-print"><p class="eyebrow">FROM FEEDBACK TO FOCUS</p><h1>Make room for<br><span>what matters.</span></h1><p>Understand what users need.<br class="mobile-break"> Decide what to build next.</p></div>
       <div id="modeBanner" class="mode-banner no-print" hidden></div>
       <div id="statusBanner" class="status-banner no-print" role="status" aria-live="polite" hidden></div>
     <!-- Stage 1: Input -->
     <section class="card" id="inputStage">
-      <p class="eyebrow">STEP 01 · LISTEN</p><h2>What are your users saying?</h2>
-      <p class="hint">Bring your reviews, support tickets, or survey responses together. We’ll help you find the signal.</p>
-      <div class="input-heading"><label for="feedbackInput">User feedback</label><span>One item per line</span></div><textarea id="feedbackInput" rows="7" placeholder="“I wish I could find my projects faster.”&#10;&#10;“The app slows down when I upload large files.”&#10;&#10;Paste your feedback here…"></textarea><div class="input-meta"><span id="feedbackCount">0 characters</span><span>Text input or .txt file · 20,000 characters max</span></div>
+      <h2>Feedback Input</h2>
+      <p class="hint">Paste raw feedback (one item per line) or upload a .txt file.</p>
+      <div class="input-heading"><label for="feedbackInput">User feedback</label><span>One item per line</span></div><textarea id="feedbackInput" rows="7" placeholder="Paste raw user feedback here, one item per line..."></textarea><div class="input-meta"><span id="feedbackCount">0 characters</span><span>20,000 characters max</span></div>
       <div class="controls-row no-print">
         <label class="btn btn-secondary file-label">Upload file<input type="file" id="fileInput" accept=".txt,text/plain" /></label>
-        <button id="sampleBtn" class="btn btn-secondary">Try sample feedback</button>
-        <button id="analyzeBtn" class="btn btn-primary">Find themes <span aria-hidden="true">→</span></button>
+        <button id="sampleBtn" class="btn btn-secondary">Load Sample Data</button>
+        <button id="analyzeBtn" class="btn btn-primary">Analyze Feedback</button>
       </div>
     </section>
 
     <!-- Stage 2: Themes -->
     <section class="card" id="themesStage" hidden>
-      <p class="eyebrow">STEP 02 · UNDERSTAND</p><h2>Find the patterns.</h2>
-      <p class="hint">See what comes up most and how much it matters. Open the supporting feedback to review each match or move it to a better theme.</p>
+      <h2>Clustered Themes</h2>
+      <p class="hint">Each theme shows frequency, severity, and supporting evidence. Reassign an item if it's classified wrong.</p>
       <div id="themesList" class="themes-grid"></div>
       <div id="unclassifiedSection"></div>
       <div class="controls-row no-print">
@@ -57,8 +54,8 @@
 
     <!-- Stage 3: Prioritization -->
     <section class="card" id="priorityStage" hidden>
-      <p class="eyebrow">STEP 03 · PRIORITIZE</p><h2>Put impact in perspective.</h2>
-      <p class="hint">Compare opportunities using reach, impact, confidence, and effort. Adjust any estimate to see the priorities change instantly.</p>
+      <h2>Prioritized Roadmap (RICE)</h2>
+      <p class="hint">Edit any input to override the AI's estimate — the score recalculates instantly.</p>
       <details class="scoring-guide"><summary>How RICE scoring works</summary><p>Score = (Reach × Impact × Confidence / 100) ÷ Effort. Frequency counts items in your sample; Reach estimates affected users across your user base. Edited values are marked as your overrides and can be reset.</p></details>
       <div class="table-wrap">
         <table id="priorityTable">
@@ -85,29 +82,28 @@
 
     <!-- Stage 4: Roadmap Summary -->
     <section class="card" id="summaryStage" hidden>
-      <p class="eyebrow">STEP 04 · DECIDE</p><h2>Choose what comes next.</h2>
-      <p class="hint">Your leading opportunities, backed by evidence. Choose to build, investigate, defer, or reject each one, then draft a product brief.</p>
+      <h2>Roadmap Summary</h2>
+      <p class="hint">Top-ranked themes with supporting evidence. Set a decision, then generate a PRD.</p>
       <div id="summaryList" class="summary-list"></div>
     </section>
 
     <!-- Stage 5: PRD -->
     <section class="card" id="prdStage" hidden>
-      <p class="eyebrow">STEP 05 · DEFINE</p><h2>A clear plan to move forward.</h2><p class="hint">Your product requirements brief. Review the scope, success measures, and open questions before sharing.</p>
+      <h2>Draft PRD</h2>
       <div id="prdDecisionBadge" class="decision-badge" hidden></div>
       <div id="prdContent" class="prd-doc"></div>
     </section>
 
     <!-- Stage 6: Export -->
     <section class="card no-print" id="exportStage" hidden>
-      <p class="eyebrow">STEP 06 · SHARE</p><h2>Bring everyone along.</h2>
-      <p class="hint">Save the complete analysis as a PDF, or copy your brief and roadmap for your team.</p>
+      <h2>Export Analysis</h2>
+      <p class="hint">Save the full analysis as a PDF, or copy the PRD/roadmap as text.</p>
       <div class="controls-row">
         <button id="printExportBtn" class="btn btn-primary">Print / Save as PDF</button>
         <button id="copyPrdBtn" class="btn btn-secondary">Copy PRD</button>
         <button id="copySummaryBtn" class="btn btn-secondary">Copy Roadmap Summary</button>
       </div>
     </section>
-    <footer class="workspace-footer no-print">Good product decisions start with listening.</footer>
   </main>
   </div>
 
