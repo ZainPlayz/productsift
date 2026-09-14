@@ -704,7 +704,6 @@ textarea:focus { border-color: var(--primary); outline: 3px solid var(--accent);
 .btn-primary:hover { background: #0077ed; }
 .btn-secondary { color: var(--text); background: var(--bg); border: 1px solid var(--border); }
 #analyzeBtn { margin-left: auto; display: inline-flex; gap: 20px; align-items: center; }
-#sampleBtn { background: transparent; color: var(--primary); border-color: transparent; }
 .file-label { position: relative; overflow: hidden; }
 .file-label input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
 .file-label:focus-within { outline: 3px solid var(--primary); outline-offset: 3px; }

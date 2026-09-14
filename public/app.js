@@ -34,7 +34,6 @@ const $ = (id) => document.getElementById(id);
 
 const feedbackInput = $("feedbackInput");
 const fileInput = $("fileInput");
-const sampleBtn = $("sampleBtn");
 const demoBtn = $("demoBtn");
 const analyzeBtn = $("analyzeBtn");
 const themesStage = $("themesStage");
@@ -139,14 +138,12 @@ async function postJSON(url, body) {
 
 // --- Stage 1: Input ---
 
-sampleBtn.addEventListener("click", () => loadSampleData());
-
-// Shared by "Load Sample Data", runAnalysis() (mock mode), and runDemo()
-// below - all three just need "fetch a bundled file into the textarea".
-// runDemo() deliberately points at the smaller demo-feedback.txt rather than
-// the full 52-item sample.txt - a live analysis of the full file was
-// measured taking 100+ seconds end to end, which defeats the point of a
-// one-click demo (see the /demo-feedback.txt route in server/index.js).
+// Shared by runAnalysis() (mock mode) and runDemo() below - both just need
+// "fetch a bundled file into the textarea". runDemo() deliberately points at
+// the smaller demo-feedback.txt rather than the full 52-item sample.txt - a
+// live analysis of the full file was measured taking 100+ seconds end to
+// end, which defeats the point of a one-click demo (see the
+// /demo-feedback.txt route in server/index.js).
 async function loadSampleData(url = "/sample-feedback.txt") {
   try {
     const res = await fetch(url);
@@ -270,7 +267,7 @@ async function runAnalysis() {
   if (analyzeBtn.disabled) return false;
   let feedback = feedbackInput.value.trim();
   if (!feedback && !isMockMode) {
-    setStatus("Paste some feedback first, or click 'Load Sample Data'.", true);
+    setStatus("Paste some feedback first, or click 'Try a Demo'.", true);
     return false;
   }
 

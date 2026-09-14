@@ -10,11 +10,11 @@ exportable artifact.**
 
 ## What it does
 
-**Try a Demo** (next to Load Sample Data) runs the full pipeline — Analyze → Prioritize → Roadmap
-Summary — on the bundled sample dataset in one click, instead of making a first-time visitor hunt
-for real feedback to paste in before they can see what this does. With `MOCK_MODE=false` (the
-default), that's a real live analysis of the sample data, not canned output — see **Why "Try a
-Demo" is a button, not something that fires on its own** below.
+**Try a Demo** runs the full pipeline — Analyze → Prioritize → Roadmap Summary — on a bundled
+sample dataset in one click, instead of making a first-time visitor hunt for real feedback to
+paste in before they can see what this does. With `MOCK_MODE=false` (the default), that's a real
+live analysis of the sample data, not canned output — see **Why "Try a Demo" is a button, not
+something that fires on its own** below.
 
 1. **Input** — paste raw feedback, or upload a `.txt` file, or upload a `.csv` export straight from
    App Store Connect, Play Console, Zendesk, Intercom, or a form tool. The CSV parser (real
@@ -97,8 +97,8 @@ npm start
 ```
 
 Open [http://localhost:3000](http://localhost:3000). Click **Try a Demo** to run the whole
-pipeline instantly on the bundled `sample-feedback.txt` (fictional feedback for a task-management
-app), or **Load Sample Data** to just load it into the textarea and drive each step yourself.
+pipeline instantly on a bundled sample dataset (fictional feedback for a task-management app) -
+or paste/upload your own feedback and click **Analyze Feedback** to drive each step yourself.
 
 Use `npm run dev` instead of `npm start` during development — it auto-restarts the server on
 file changes (`node --watch`). Note: `--watch`'s file-watcher has been unreliable in some Windows
@@ -331,14 +331,21 @@ mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the
 math and the UI — without needing an API key or spending anything on LLM calls during
 development.
 
-**Why "Try a Demo" is a button, not something that fires on its own.**
+**Why "Try a Demo" is a button, not something that fires on its own - and why it replaced a
+separate "Load Sample Data" button rather than sitting alongside it.**
 A visitor landing on an empty textarea has to already know this tool does something before
-they'll click "Load Sample Data" then "Analyze" themselves - most won't. An earlier version of
-this ran the demo automatically on page load in mock mode; reverted in favor of an explicit
-button once `MOCK_MODE=false` became the default (see below) - a page that silently spends a real
-API call on a visitor's behalf before they've asked for anything is a different, worse tradeoff
-than a page that only spends one when they click something that says it will. `runDemo()` in
-`app.js` chains `runAnalysis()` → `runPrioritize()` → `showSummary()`, stopping at the Roadmap
+they'll paste feedback and click "Analyze" themselves - most won't. An earlier version of this ran
+the demo automatically on page load in mock mode; reverted in favor of an explicit button once
+`MOCK_MODE=false` became the default (see below) - a page that silently spends a real API call on
+a visitor's behalf before they've asked for anything is a different, worse tradeoff than a page
+that only spends one when they click something that says it will. A separate "Load Sample Data"
+button (load the bundled feedback into the textarea, then drive Analyze/Prioritize/Summary
+yourself) existed briefly alongside "Try a Demo" (do all of that in one click); consolidated into
+just the one button once it was clear the two-button version was solving a problem nobody had -
+anyone who wants to explore a single stage manually can still paste/upload their own feedback and
+click Analyze.
+
+`runDemo()` in `app.js` chains `runAnalysis()` → `runPrioritize()` → `showSummary()`, stopping at the Roadmap
 Summary (the fullest single view of what this tool does) rather than auto-generating a PRD, which
 stays a deliberate per-theme choice for the visitor to make themselves. Both `runAnalysis()` and
 `runPrioritize()` are factored out of their own button's click listener specifically so this could
