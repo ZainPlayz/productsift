@@ -55,6 +55,15 @@ app.get("/sample-feedback.txt", (req, res) => {
   res.sendFile(path.join(__dirname, "..", "sample-feedback.txt"));
 });
 
+// A separate, much smaller (9-item) file for "Try a Demo" specifically - a
+// live analysis of the full 52-item sample.txt was measured taking 100+
+// seconds end to end (a reasoning model's latency on a large batch, see
+// server/llmClient.js), which defeats the point of a quick one-click demo.
+// This trims to ~3 clear themes, fast enough to actually feel instant.
+app.get("/demo-feedback.txt", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "demo-feedback.txt"));
+});
+
 app.use("/api/cluster", llmRateLimiter, clusterRouter);
 app.use("/api/prioritize", llmRateLimiter, prioritizeRouter);
 app.use("/api/prd", llmRateLimiter, prdRouter);

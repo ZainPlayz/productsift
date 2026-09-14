@@ -35,6 +35,7 @@ const $ = (id) => document.getElementById(id);
 const feedbackInput = $("feedbackInput");
 const fileInput = $("fileInput");
 const sampleBtn = $("sampleBtn");
+const demoBtn = $("demoBtn");
 const analyzeBtn = $("analyzeBtn");
 const themesStage = $("themesStage");
 const themesList = $("themesList");
@@ -138,15 +139,25 @@ async function postJSON(url, body) {
 
 // --- Stage 1: Input ---
 
-sampleBtn.addEventListener("click", async () => {
+sampleBtn.addEventListener("click", () => loadSampleData());
+
+// Shared by "Load Sample Data", runAnalysis() (mock mode), and runDemo()
+// below - all three just need "fetch a bundled file into the textarea".
+// runDemo() deliberately points at the smaller demo-feedback.txt rather than
+// the full 52-item sample.txt - a live analysis of the full file was
+// measured taking 100+ seconds end to end, which defeats the point of a
+// one-click demo (see the /demo-feedback.txt route in server/index.js).
+async function loadSampleData(url = "/sample-feedback.txt") {
   try {
-    const res = await fetch("/sample-feedback.txt");
+    const res = await fetch(url);
     feedbackInput.value = await res.text();
     updateFeedbackCount();
+    return true;
   } catch (err) {
-    setStatus("Could not load sample-feedback.txt", true);
+    setStatus(`Could not load ${url}`, true);
+    return false;
   }
-});
+}
 
 // Real feedback almost never arrives as hand-typed lines - it arrives as a
 // CSV export from whatever tool collected it (App Store Connect, Play
@@ -248,15 +259,14 @@ fileInput.addEventListener("change", async () => {
 
 analyzeBtn.addEventListener("click", () => runAnalysis());
 
-// Pulled out of the click listener so runAutoDemo() (below) can await the
+// Pulled out of the click listener so runDemo() (below) can await the
 // same logic instead of simulating a click and hoping it finished - returns
 // true/false so a chained caller knows whether to continue to the next stage.
 async function runAnalysis() {
   // Guards the brief window before setLoading() below actually disables the
-  // button - e.g. the auto-demo is already mid-flight and a fast click (or a
-  // second automated trigger) lands before that happens. A real click on an
-  // already-disabled button never reaches here at all; this only matters for
-  // that narrow race.
+  // button - e.g. runDemo() is already mid-flight and a fast click lands
+  // before that happens. A real click on an already-disabled button never
+  // reaches here at all; this only matters for that narrow race.
   if (analyzeBtn.disabled) return false;
   let feedback = feedbackInput.value.trim();
   if (!feedback && !isMockMode) {
@@ -271,15 +281,8 @@ async function runAnalysis() {
   // sample data here and show it in the box, rather than pretend the two are
   // connected.
   if (isMockMode) {
-    try {
-      const res = await fetch("/sample-feedback.txt");
-      feedback = await res.text();
-      feedbackInput.value = feedback;
-      updateFeedbackCount();
-    } catch (err) {
-      setStatus("Could not load the bundled sample dataset for demo mode.", true);
-      return false;
-    }
+    if (!(await loadSampleData())) return false;
+    feedback = feedbackInput.value.trim();
   }
 
   // Reset downstream stages so an old table/summary/PRD never shows alongside a new analysis.
@@ -877,21 +880,46 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// A visitor landing on an empty textarea has to already know this tool does
-// something before they'll click "Load Sample Data" then "Analyze"
-// themselves - most won't. Running the demo automatically means the very
-// first thing they see is the tool actually working, not a blank form.
-// Chains through to the Roadmap Summary (the fullest single view of what
-// this does - themes, priority, the #1 recommendation with reasoning) and
-// deliberately stops there; PRD/Export stay for the visitor to trigger
-// themselves once they're exploring on their own terms.
-async function runAutoDemo() {
-  setStatus("Running an automatic demo on sample feedback data - this is a test run, not your own input or live Groq output.");
-  if (!(await runAnalysis())) return;
-  if (!(await runPrioritize())) return;
-  showSummary();
-  setStatus("This is a demo run on sample data, not something you entered or live Groq output.");
+// A one-click way to see the whole pipeline (Analyze -> Prioritize ->
+// Roadmap Summary) run on the bundled sample dataset instead of hunting for
+// real feedback to paste in first. Deliberately opt-in (a button, not
+// something that fires on load) - stops at the Roadmap Summary (the fullest
+// single view of what this tool does); PRD/Export stay for the visitor to
+// trigger themselves once they're exploring on their own terms. The wording
+// below depends on isMockMode because the result genuinely differs: in mock
+// mode this is canned data, but with a real GROQ_API_KEY configured (the
+// default now) it's a real live analysis - just of the sample dataset
+// instead of whatever the visitor would have typed themselves.
+async function runDemo() {
+  if (demoBtn.disabled) return; // already running
+  setLoading(demoBtn, true);
+  setStatus(
+    isMockMode
+      ? "Running a demo on sample feedback data - canned results, not live Groq output."
+      : "Running the demo on sample feedback data - real live analysis, just using the bundled sample instead of your own feedback.",
+  );
+  try {
+    // In live mode runAnalysis() only forces sample data for isMockMode - it
+    // has no reason to otherwise overwrite whatever a visitor may have typed
+    // in the box. The demo's whole point is running sample data specifically,
+    // so load it into the textarea itself before analyzing - the smaller
+    // demo-feedback.txt, not sample-feedback.txt (that one's full 52 items
+    // measured 100+ seconds for a live analysis; irrelevant in mock mode,
+    // where runAnalysis() below unconditionally reloads the full file anyway).
+    if (!(await loadSampleData("/demo-feedback.txt"))) return;
+    if (!(await runAnalysis())) return;
+    if (!(await runPrioritize())) return;
+    showSummary();
+    setStatus(
+      isMockMode
+        ? "This demo used canned sample results, not live Groq output. Paste your own feedback and click Analyze for the real thing."
+        : "This demo ran on the bundled sample dataset, not your own feedback - paste your own above and click Analyze to try it for real.",
+    );
+  } finally {
+    setLoading(demoBtn, false);
+  }
 }
+demoBtn.addEventListener("click", () => runDemo());
 
 (async function showModeBanner() {
   try {
@@ -905,14 +933,6 @@ async function runAutoDemo() {
     if (!sharingEnabled) {
       shareBtn.disabled = true;
       shareBtn.title = "Sharing isn't configured on this server (needs DATABASE_URL) - see the README.";
-    }
-    // Only for a fresh, untouched load in demo mode - never on a /p/:id
-    // shared-project link (that link's own saved state should win), and
-    // never if the visitor already started something themselves in the
-    // moment it took this status check to resolve.
-    const onSharedLink = /^\/p\//.test(location.pathname);
-    if (isMockMode && !onSharedLink && !clusteredThemes.length && !feedbackInput.value.trim()) {
-      runAutoDemo();
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */

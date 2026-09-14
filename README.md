@@ -10,10 +10,11 @@ exportable artifact.**
 
 ## What it does
 
-On a `MOCK_MODE=true` deployment, landing on an empty textarea auto-runs the full demo (Analyze →
-Prioritize → Roadmap Summary) on the bundled sample data, so the first thing a visitor sees is the
-tool actually working, not a blank form - the mode banner and status text make clear throughout
-that it's a test run on sample data, not live output (see **Why demo mode runs itself** below).
+**Try a Demo** (next to Load Sample Data) runs the full pipeline — Analyze → Prioritize → Roadmap
+Summary — on the bundled sample dataset in one click, instead of making a first-time visitor hunt
+for real feedback to paste in before they can see what this does. With `MOCK_MODE=false` (the
+default), that's a real live analysis of the sample data, not canned output — see **Why "Try a
+Demo" is a button, not something that fires on its own** below.
 
 1. **Input** — paste raw feedback, or upload a `.txt` file, or upload a `.csv` export straight from
    App Store Connect, Play Console, Zendesk, Intercom, or a form tool. The CSV parser (real
@@ -95,8 +96,9 @@ Then run:
 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Click **Load Sample Data** to try it
-instantly with the bundled `sample-feedback.txt` (fictional feedback for a task-management app).
+Open [http://localhost:3000](http://localhost:3000). Click **Try a Demo** to run the whole
+pipeline instantly on the bundled `sample-feedback.txt` (fictional feedback for a task-management
+app), or **Load Sample Data** to just load it into the textarea and drive each step yourself.
 
 Use `npm run dev` instead of `npm start` during development — it auto-restarts the server on
 file changes (`node --watch`). Note: `--watch`'s file-watcher has been unreliable in some Windows
@@ -329,21 +331,21 @@ mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the
 math and the UI — without needing an API key or spending anything on LLM calls during
 development.
 
-**Why demo mode runs itself instead of waiting for a click.**
+**Why "Try a Demo" is a button, not something that fires on its own.**
 A visitor landing on an empty textarea has to already know this tool does something before
-they'll click "Load Sample Data" then "Analyze" themselves - most won't, and a portfolio demo
-that requires the viewer to already understand it defeats its own purpose. `runAutoDemo()` in
-`app.js` fires once, only when the page loads fresh in mock mode with nothing already in progress
-(guarded against a `/p/:id` shared-project link, which should hydrate its own saved state instead,
-and against a race with whatever the visitor may have already started themselves in the moment
-`/api/status` took to resolve) - it chains `runAnalysis()` → `runPrioritize()` → `showSummary()`,
-stopping at the Roadmap Summary (the fullest single view of what this tool does) rather than
-auto-generating a PRD, which stays a deliberate per-theme choice for the visitor to make
-themselves. Both `runAnalysis()` and `runPrioritize()` were factored out of their button click
-listeners specifically so this could `await` the real logic instead of simulating clicks and
-hoping they landed in order; each also bails out (`return false`) if its button is already
-disabled, guarding the narrow case where a real click and the auto-demo could otherwise both
-start the same call.
+they'll click "Load Sample Data" then "Analyze" themselves - most won't. An earlier version of
+this ran the demo automatically on page load in mock mode; reverted in favor of an explicit
+button once `MOCK_MODE=false` became the default (see below) - a page that silently spends a real
+API call on a visitor's behalf before they've asked for anything is a different, worse tradeoff
+than a page that only spends one when they click something that says it will. `runDemo()` in
+`app.js` chains `runAnalysis()` → `runPrioritize()` → `showSummary()`, stopping at the Roadmap
+Summary (the fullest single view of what this tool does) rather than auto-generating a PRD, which
+stays a deliberate per-theme choice for the visitor to make themselves. Both `runAnalysis()` and
+`runPrioritize()` are factored out of their own button's click listener specifically so this could
+`await` the real logic instead of simulating clicks and hoping they landed in order; each also
+bails out (`return false`) if its own button is already disabled, and `runDemo()` disables its own
+button for the same reason - guarding the narrow case of a second click landing before the first
+one's `setLoading()` call takes effect.
 
 **Why per-visitor Groq keys were tried, then reverted back to one shared server key (v1.7).**
 Briefly, every visitor could paste their own Groq key (stored client-side, sent per-request on a
