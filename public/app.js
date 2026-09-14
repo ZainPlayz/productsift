@@ -7,6 +7,7 @@ let rankedThemes = [];
 let feedbackItems = []; // numbered (1-based) split of the submitted feedback, from /api/cluster
 let lastPrdMarkdown = ""; // raw markdown of the most recently generated PRD, for "Copy PRD"
 let lastPrdTheme = null; // the theme that PRD was generated for, for the decision badge
+let isMockMode = false; // set from /api/status below - mock mode's canned response is the same regardless of input, so Analyze forces the bundled sample data instead of pretending arbitrary text drives it
 
 // --- Sharing (persisted "living" project link, e.g. /p/abc123) ---
 let currentProjectId = null; // null until the first Share click, or until hydrated from a /p/:id link
@@ -38,6 +39,7 @@ const themesStage = $("themesStage");
 const themesList = $("themesList");
 const unclassifiedSection = $("unclassifiedSection");
 const prioritizeBtn = $("prioritizeBtn");
+const addThemeBtn = $("addThemeBtn");
 const priorityStage = $("priorityStage");
 const priorityTableBody = $("priorityTableBody");
 const summaryStage = $("summaryStage");
@@ -244,10 +246,28 @@ fileInput.addEventListener("change", async () => {
 });
 
 analyzeBtn.addEventListener("click", async () => {
-  const feedback = feedbackInput.value.trim();
-  if (!feedback) {
+  let feedback = feedbackInput.value.trim();
+  if (!feedback && !isMockMode) {
     setStatus("Paste some feedback first, or click 'Load Sample Data'.", true);
     return;
+  }
+
+  // Mock mode's response is a fixed canned dataset - it does not read the
+  // submitted text at all. Silently accepting arbitrary input (e.g. "hello")
+  // and returning an elaborate 8-theme analysis anyway is actively
+  // misleading about what demo mode is doing, so force the actual bundled
+  // sample data here and show it in the box, rather than pretend the two are
+  // connected.
+  if (isMockMode) {
+    try {
+      const res = await fetch("/sample-feedback.txt");
+      feedback = await res.text();
+      feedbackInput.value = feedback;
+      updateFeedbackCount();
+    } catch (err) {
+      setStatus("Could not load the bundled sample dataset for demo mode.", true);
+      return;
+    }
   }
 
   // Reset downstream stages so an old table/summary/PRD never shows alongside a new analysis.
@@ -392,10 +412,20 @@ function wireEvidenceReassignment(container, currentThemeId) {
   });
 }
 
+// Reassigning an item re-runs renderThemes() from scratch (simplest way to
+// keep frequency/evidence consistent everywhere), which would otherwise
+// re-collapse every evidence panel back to its default hidden state - so a
+// PM working through a list of unclassified items had to re-open the panel
+// after every single reassignment. Tracking which panels are open here (by
+// theme_id, or the literal string "unclassified") lets the render restore
+// that state instead of resetting it.
+const expandedEvidencePanels = new Set();
+
 function renderThemes() {
   themesList.innerHTML = "";
   clusteredThemes.forEach((t) => {
     const moderateCount = Object.values(t.item_fit).filter((f) => f.bucket === "moderate").length;
+    const isExpanded = expandedEvidencePanels.has(t.theme_id);
     const card = document.createElement("div");
     card.className = "theme-card";
     card.innerHTML = `
@@ -408,8 +438,8 @@ function renderThemes() {
       <p>${escapeHtml(t.definition)}</p>
       <p class="hint">${escapeHtml(t.severity_reasoning)}</p>
       ${t.example_quotes.map((q) => `<div class="quote">"${escapeHtml(q)}"</div>`).join("")}
-      <button type="button" class="evidence-toggle">${t.frequency === 0 ? "No" : "View"} supporting feedback &middot; ${t.frequency}</button>
-      <ul class="evidence-list hidden">
+      <button type="button" class="evidence-toggle">${t.frequency === 0 ? "No" : isExpanded ? "Hide" : "View"} supporting feedback &middot; ${t.frequency}</button>
+      <ul class="evidence-list${isExpanded ? "" : " hidden"}">
         ${t.supporting_item_numbers.map((n) => evidenceItemHtml(n, t.theme_id, t.item_fit[n], null)).join("")}
       </ul>
     `;
@@ -425,6 +455,8 @@ function renderThemes() {
       if (t.frequency === 0) return;
       const isHidden = evidenceList.classList.toggle("hidden");
       toggleBtn.textContent = `${isHidden ? "View" : "Hide"} supporting feedback · ${t.frequency}`;
+      if (isHidden) expandedEvidencePanels.delete(t.theme_id);
+      else expandedEvidencePanels.add(t.theme_id);
     });
 
     themesList.appendChild(card);
@@ -443,10 +475,11 @@ function renderUnclassifiedSection() {
     unclassifiedSection.innerHTML = "";
     return;
   }
+  const isExpanded = expandedEvidencePanels.has("unclassified");
   unclassifiedSection.innerHTML = `
     <div class="unclassified-card">
       <button type="button" class="evidence-toggle">${unclassifiedItems.length} feedback item${unclassifiedItems.length === 1 ? "" : "s"} weren't assigned to a theme</button>
-      <ul class="evidence-list hidden">
+      <ul class="evidence-list${isExpanded ? "" : " hidden"}">
         ${unclassifiedItems.map((n) => evidenceItemHtml(n, null, null, unclassifiedReasons[n] ?? null)).join("")}
       </ul>
     </div>
@@ -455,9 +488,36 @@ function renderUnclassifiedSection() {
   const evidenceList = unclassifiedSection.querySelector(".evidence-list");
   wireEvidenceReassignment(evidenceList, null);
   toggleBtn.addEventListener("click", () => {
-    evidenceList.classList.toggle("hidden");
+    const isHidden = evidenceList.classList.toggle("hidden");
+    if (isHidden) expandedEvidencePanels.delete("unclassified");
+    else expandedEvidencePanels.add("unclassified");
   });
 }
+
+// A PM should be able to name a theme the AI didn't come up with, not just
+// pick between what it discovered and Unclassified. Starts empty (frequency
+// 0) - reassign items into it from any theme's evidence list, or from
+// Unclassified, the same way an AI-discovered theme's items get moved.
+addThemeBtn.addEventListener("click", () => {
+  const name = prompt("Name this theme:");
+  if (!name || !name.trim()) return;
+
+  const newTheme = {
+    theme_id: `manual-${Date.now()}`,
+    theme: name.trim(),
+    definition: "Manually created by PM - not an AI-discovered theme.",
+    severity: 3,
+    severity_reasoning: "No AI severity estimate for a manually created theme - based purely on whatever items you move into it.",
+    frequency: 0,
+    supporting_item_numbers: [],
+    item_fit: {},
+    keywords: [],
+    example_quotes: [],
+  };
+  clusteredThemes.push(newTheme);
+  renderThemes();
+  setStatus(`Created theme "${newTheme.theme}". Move items into it from any theme's evidence list, or from Unclassified.`);
+});
 
 prioritizeBtn.addEventListener("click", async () => {
   summaryStage.hidden = true;
@@ -859,9 +919,10 @@ function escapeHtml(str) {
   try {
     const res = await fetch("/api/status");
     const { mockMode, sharingEnabled } = await res.json();
+    isMockMode = mockMode;
     if (mockMode) {
       modeBanner.hidden = false;
-      modeBanner.textContent = "Demo mode: showing sample results, not live Groq output.";
+      modeBanner.textContent = "Demo mode: showing sample results, not live Groq output. Analyze always runs on the bundled sample dataset here, regardless of what's in the box below.";
     }
     if (!sharingEnabled) {
       shareBtn.disabled = true;

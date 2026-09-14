@@ -22,12 +22,12 @@
     <aside class="workflow no-print">
       <p class="eyebrow">WORKSPACE</p>
       <nav aria-label="Analysis steps" id="stepNav">
-        <button data-stage="inputStage" class="step active" aria-current="step"><span class="step-number">1</span><span>Feedback</span></button>
-        <button data-stage="themesStage" class="step" disabled><span class="step-number">2</span><span>Themes</span></button>
-        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities</span></button>
-        <button data-stage="summaryStage" class="step" disabled><span class="step-number">4</span><span>Roadmap</span></button>
-        <button data-stage="prdStage" class="step" disabled><span class="step-number">5</span><span>PRD</span></button>
-        <button data-stage="exportStage" class="step" disabled><span class="step-number">6</span><span>Export</span></button>
+        <button data-stage="inputStage" class="step active" aria-current="step"><span class="step-number">1</span><span>Feedback<small>Paste or upload raw feedback</small></span></button>
+        <button data-stage="themesStage" class="step" disabled><span class="step-number">2</span><span>Themes<small>AI groups feedback into patterns</small></span></button>
+        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities<small>Themes ranked by RICE score</small></span></button>
+        <button data-stage="summaryStage" class="step" disabled><span class="step-number">4</span><span>Roadmap<small>Top picks + your Build/Defer decision</small></span></button>
+        <button data-stage="prdStage" class="step" disabled><span class="step-number">5</span><span>PRD<small>Auto-drafted one-pager per theme</small></span></button>
+        <button data-stage="exportStage" class="step" disabled><span class="step-number">6</span><span>Export<small>Print, or copy as text</small></span></button>
       </nav>
     </aside>
     <main>
@@ -48,10 +48,11 @@
     <!-- Stage 2: Themes -->
     <section class="card" id="themesStage" hidden>
       <h2>Clustered Themes</h2>
-      <p class="hint">Each theme shows frequency, severity, and supporting evidence. Reassign an item if it's classified wrong.</p>
+      <p class="hint">Each theme shows frequency, severity, and supporting evidence. Move any item to a different theme, or create a new theme yourself.</p>
       <div id="themesList" class="themes-grid"></div>
       <div id="unclassifiedSection"></div>
       <div class="controls-row no-print">
+        <button id="addThemeBtn" class="btn btn-secondary">+ New Theme</button>
         <button id="prioritizeBtn" class="btn btn-primary">Prioritize with RICE</button>
       </div>
     </section>
