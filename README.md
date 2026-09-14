@@ -1,11 +1,11 @@
 # ProductSift
 
 Turns a batch of messy, unstructured user feedback into evidence-backed themes, a transparent
-RICE-prioritized roadmap, a PM decision on each item, and an auto-drafted, decision-aware PRD —
-exportable as a presentable artifact, not just a webpage.
+Impact/Severity-prioritized roadmap, a PM decision on each item, and an auto-drafted, decision-aware
+PRD — exportable as a presentable artifact, not just a webpage.
 
 Built as a portfolio project to demonstrate the full PM loop: **raw feedback → evidence-backed
-themes → transparent RICE → PM decision → decision-sensitive roadmap → actionable PRD →
+themes → transparent prioritization → PM decision → decision-sensitive roadmap → actionable PRD →
 exportable artifact.**
 
 ## What it does
@@ -24,14 +24,15 @@ exportable artifact.**
    reason — never forced into the nearest-sounding theme. Every theme's "View supporting feedback"
    panel shows the full numbered list with a fit flag on borderline classifications, and lets a PM
    reassign any item on the spot if the AI got it wrong — frequency updates immediately.
-3. **Prioritization** — each theme is scored with **RICE** (Reach × Impact × Confidence / Effort),
-   with the model's reasoning shown for every input, not just the final number. **Frequency and
-   Reach are shown as two distinct columns** — one a fact about your sample, the other an AI
-   projection onto your user base. Every RICE input is editable, recalculates instantly, and an
-   edited value is visibly marked as a PM override with a one-click reset back to the AI's number.
+3. **Prioritization** — each theme is scored as **Impact × Severity** (both 1-5). Severity comes
+   from clustering (grounded in the theme's actual evidence); Impact is a separate AI call, with
+   its reasoning shown, not just the final number. Impact is editable and recalculates instantly,
+   marked as a PM override with a one-click reset back to the AI's number when changed. (v1 scored
+   this with RICE - Reach × Impact × Confidence / Effort - see **Why RICE got dropped** below for
+   why that changed.)
 4. **Roadmap Summary** — the top 3 themes, with a **"Why this is #1"** explanation and a
    **decision sensitivity** analysis (what would have to change for the ranking to flip) computed
-   directly from the RICE numbers, no extra AI call. Each item gets an explicit PM
+   directly from the priority numbers, no extra AI call. Each item gets an explicit PM
    **Decision** — Build / Investigate / Defer / Reject — independent of its rank.
 5. **PRD generation** — draft a one-pager for any of the top 3 themes: problem statement,
    proposed solution, scope (in/out), background, user stories, success metrics, and open
@@ -41,7 +42,7 @@ exportable artifact.**
    or Copy Roadmap Summary as plain text — a tangible output, not just a page you leave open.
 7. **Share** — click Share to get a persistent link (`/p/abc123`) backed by a real database, not
    a snapshot. Anyone with the link sees the current state on load, and every edit anyone makes
-   after that — a reassignment, a RICE override, a decision, a new PRD — autosaves back to the
+   after that — a reassignment, a priority override, a decision, a new PRD — autosaves back to the
    same link (roughly a second after the edit, debounced) so the next person to open it sees it
    too. Requires `DATABASE_URL` to be set (see [Setup](#setup)); without it the button just
    disables itself with an explanatory tooltip instead of breaking.
@@ -199,10 +200,13 @@ number:**
 - **A union of numeric literals (Zod `z.union([z.literal(0.25), ...])`) worked fine as JSON
   Schema for Gemini's best-effort mode, but Groq's strict-mode compiler rejected it live**
   (`"cannot include both 'integer' and 'number'"` when mixing whole and fractional consts under
-  one property). Fixed by having the model return a qualitative `impact_label` (minimal/low/
-  medium/high/massive) instead of a raw number, with code mapping the label to its RICE
-  multiplier via `IMPACT_SCALE` in `schemas.js` - the same "model gives a judgment, code computes
-  the number" pattern `rice_score` itself already used.
+  one property). At the time (RICE's 0.25/0.5/1/2/3 impact scale) this was fixed by having the
+  model return a qualitative label instead of a raw number, with code mapping the label back to
+  its multiplier. When RICE was dropped for a plain 1-5 Impact scale (v1.6, see **Why RICE got
+  dropped** below), the whole workaround became unnecessary - a single consistent integer range
+  (`z.number().int().min(1).max(5)`) never mixes int/float literal types in the first place, so
+  it doesn't hit this constraint at all. Worth keeping as a historical note: sometimes fixing the
+  actual design problem removes the need for the workaround entirely.
 
 If you exhaust Groq's quota, the API returns a `429`; `MOCK_MODE=true` keeps the app fully
 demoable while you wait. `GROQ_MODEL=qwen/qwen3.8-27b` in `.env` is the other strict-mode-capable
@@ -236,7 +240,7 @@ already changed once during this project's own development.
 - **PRD generation has a hard anti-hallucination guardrail.** Early testing surfaced the model
   inventing plausible-sounding but fake numbers (e.g. "1,200 active users") in the PRD prose.
   The system prompt in `server/routes/prd.js` now restricts it to only the exact
-  frequency/severity/RICE-input numbers present in the theme data, and to describe metrics
+  frequency/severity/priority numbers present in the theme data, and to describe metrics
   directionally ("reduce load time materially") rather than assert invented targets.
 
 This is still a local single-user demo, not a hardened multi-tenant service — there's no auth,
@@ -254,48 +258,57 @@ length of that list rather than asked of the model directly (see `cluster.js`), 
 supporting feedback" panel renders the full numbered list, so a PM (or an interviewer) can
 click through from "17 feedback items" to the actual 17 items.
 
-**Why frequency and severity are separate axes, not one blended score — and why frequency and
-reach are two different numbers, not the same one (v1.1).**
+**Why RICE got dropped in favor of Impact × Severity (v1.6).**
+v1-v1.4 scored themes with RICE (Reach × Impact × Confidence / Effort), each of the four inputs
+AI-estimated and PM-editable. Direct user testing found that in practice nobody touched Reach,
+Confidence, or Effort — Reach and Confidence were AI guesses layered on top of an AI guess with
+no real data behind either, and Effort (engineering estimation in person-weeks) is squarely a
+Jira/Asana/Linear job, not something a feedback-synthesis tool should be pretending to estimate.
+Carrying three fields nobody used didn't make the tool look more rigorous, it just made the table
+harder to read and the "RICE" framing harder to defend under questioning. What replaced it -
+`priority_score = impact × severity` - uses only inputs actually grounded in the feedback itself:
+Severity comes from clustering, backed by real evidence quotes; Impact is a separate, focused AI
+call. Simpler, and every number on screen is defensible instead of half of them being decoration.
+The RICE formula, `ai_estimate`-based override tracking, and "explain the ranking with pure
+arithmetic, no extra LLM call" design principles all carried over unchanged - see below.
+
+**Why frequency and severity are separate axes, not one blended score (v1.1).**
 A theme can be mentioned constantly but be low-stakes (a cosmetic nitpick), or mentioned
 rarely but be severe (a data-loss bug one power user hit). Collapsing those into a single
-"importance" number would hide that distinction. The same discipline applies one step further
-down: frequency (how many feedback items raised it) and reach (the AI's projection of how many
-users in the wider base are affected) are related but not interchangeable — 30 complaints in a
-sample doesn't mean 30% of the user base is affected. The RICE table shows both columns side by
-side rather than deriving one from the other with a fixed multiplier, and the prompt in
-`prioritize.js` explicitly tells the model not to just scale frequency by a constant.
+"importance" number would hide that distinction - frequency stays a plain fact from clustering,
+severity stays a separate AI judgment call, and neither is allowed to stand in for the other.
 
-**Why RICE scores are always computed in code, never trusted from the model.**
-The LLM estimates the four RICE inputs (Reach, Impact, Confidence, Effort) with reasoning for
-each — see `server/routes/prioritize.js`. The actual `rice_score = (reach × impact ×
-confidence/100) / effort` arithmetic always happens in JavaScript, both server-side and again
-client-side when a user edits an input. This guarantees the score is never inconsistent with
-its inputs, and makes the recalculation instant without a network round-trip.
+**Why priority scores are always computed in code, never trusted from the model.**
+The LLM estimates Impact with reasoning — see `server/routes/prioritize.js`. The actual
+`priority_score = impact × severity` arithmetic always happens in JavaScript, both server-side
+and again client-side when a user edits Impact. This guarantees the score is never inconsistent
+with its inputs, and makes the recalculation instant without a network round-trip.
 
-**Why RICE inputs are editable, not fixed — and why an edit is visually marked as a PM override,
+**Why Impact is editable, not fixed — and why an edit is visually marked as a PM override,
 not silently blended in (v1.1).**
-An LLM's Reach/Effort estimates are a *starting point*, not ground truth — a real PM would
-override them with actual analytics and engineering estimates. Making them editable in the UI
-is a deliberate acknowledgment that this tool assists judgment, it doesn't replace it. The
-original AI estimate for each field is kept in memory (`ai_estimate` on the theme object) even
-after editing, so the moment a value diverges from it the cell gets a visible highlight, an
-"AI: &lt;original&gt;" note, and a one-click reset — the interface should never let "the AI's
-number" and "the PM's judgment call" look identical once they've diverged.
+An LLM's Impact estimate is a *starting point*, not ground truth — a real PM would override it
+with their own judgment. Making it editable in the UI is a deliberate acknowledgment that this
+tool assists judgment, it doesn't replace it. The original AI estimate is kept in memory
+(`ai_estimate` on the theme object) even after editing, so the moment the value diverges from it
+the cell gets a visible highlight, an "AI: &lt;original&gt;" note, and a one-click reset — the
+interface should never let "the AI's number" and "the PM's judgment call" look identical once
+they've diverged.
 
-**Why the model's RICE response is matched back to themes by array position, not trusted to
-echo the theme's identity fields (v1.1).**
+**Why the model's prioritization response is matched back to themes by array position, not
+trusted to echo the theme's identity fields (v1.1).**
 Early on, `prioritize.js` asked the model to return the full theme object (name, summary,
-frequency, severity) alongside its 4 RICE estimates, and just trusted that copy back. Now the
-schema only asks for the 4 RICE fields plus their reasoning, in the same order as the input
-themes; the route re-attaches every identity field from the original clustered theme by index.
-One less thing an LLM could subtly alter (a reworded summary, a dropped feedback item number)
-on a call that was never supposed to touch it.
+frequency, severity) alongside its estimate, and just trusted that copy back. Now the schema
+only asks for Impact plus its reasoning, in the same order as the input themes; the route
+re-attaches every identity field from the original clustered theme by index. One less thing an
+LLM could subtly alter (a reworded summary, a dropped feedback item number) on a call that was
+never supposed to touch it.
 
 **Why there's a mock mode.**
 The build was done in dependency order (input plumbing → clustering → prioritization → PRD),
 each stage tested before the next was built, per typical incremental PM/eng workflow. Mock
-mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the RICE math and
-the UI — without needing an API key or spending anything on LLM calls during development.
+mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the priority-score
+math and the UI — without needing an API key or spending anything on LLM calls during
+development.
 
 **Why structured outputs (Zod schemas) instead of asking the model to "return JSON".**
 `server/schemas.js` defines the exact shape expected back from the clustering and
@@ -312,32 +325,34 @@ like a well-organized bug report than a handoff document. `prd.js` now asks for 
 (if lightweight) Proposed Solution, and an explicit In Scope / Out of Scope list — the same
 anti-hallucination guardrail that stops the model from inventing user counts applies here too,
 so Out of Scope has to name real, plausible-sounding adjacent work rather than generic filler.
-Between the RICE table and the PRD, a Roadmap Summary now shows the top 3 themes with their
+Between the priority table and the PRD, a Roadmap Summary now shows the top 3 themes with their
 score and evidence at a glance and lets the PM choose which one to draft a PRD for (not always
 just #1) — a closer analog to how a real prioritization review ends: with a short list and a
 decision, not a jump straight into writing.
 
-**Why RICE ranks but a separate Decision field is what a PM actually commits to (v1.2).**
-RICE is a prioritization framework, not a decision-maker - a lower-scoring item can still be
-worth investigating if the evidence behind it is thin, and a high scorer can still be deferred
-for reasons RICE doesn't capture (a dependency, a strategic call). So every roadmap item gets an
-explicit Build/Investigate/Defer/Reject control, independent of its rank, and that decision then
-shapes how the PRD is framed (see `DECISION_FRAMING` in `prd.js`) - "Investigate" reads as a
+**Why the priority score ranks but a separate Decision field is what a PM actually commits to
+(v1.2).**
+A priority score is an input to a decision, not a decision-maker - a lower-scoring item can still
+be worth investigating if the evidence behind it is thin, and a high scorer can still be deferred
+for reasons the score doesn't capture (a dependency, a strategic call). So every roadmap item gets
+an explicit Build/Investigate/Defer/Reject control, independent of its rank, and that decision
+then shapes how the PRD is framed (see `DECISION_FRAMING` in `prd.js`) - "Investigate" reads as a
 recommendation pending validation, not a commitment; "Reject" reads as a decision record, not a
 pitch.
 
 **Why "Why this is #1" and "Decision sensitivity" are computed in JavaScript, with zero
-additional LLM calls (v1.2).**
-Both panels are pure arithmetic over numbers already on screen. The ranking explanation buckets
-each RICE input as Low/Moderate/High - reach and effort relative to the *current* theme set
-(a percentile rank, since "high reach" means something different in a 5-theme batch than a
-30-theme one), impact and confidence against fixed PM-standard bands - and composes a sentence
-from those buckets. The sensitivity analysis rearranges `rice_score = reach*impact*confidence/
-100/effort` algebraically to solve for the reach/confidence/effort value at which the #1 theme
-would tie the #2 theme, holding the other inputs fixed. Neither needed a prompt: the interesting
-product idea here isn't "ask the AI to explain itself," it's "the numbers already imply this
-explanation, so compute it directly and it's instant, free, and exactly reproducible." Both stay
-live - editing any RICE input re-renders them along with the rest of the roadmap summary.
+additional LLM calls (v1.2, simplified in v1.6).**
+Both panels are pure arithmetic over numbers already on screen. The ranking explanation labels
+Impact and Severity Low/Moderate/High against fixed 1-5 bands (the same bands the severity badges
+already use, so a reader only has to learn one scale) and composes a sentence from those labels.
+The sensitivity analysis solves `priority_score = impact × severity` for the Impact value at
+which the #1 theme would tie the #2 theme - Severity isn't PM-editable, so Impact is the only
+input that can actually move, which is what makes the v1.6 version of this simpler than the old
+four-variable RICE version (that one held three inputs fixed and solved for each of the other
+three in turn). Neither needed a prompt: the interesting product idea here isn't "ask the AI to
+explain itself," it's "the numbers already imply this explanation, so compute it directly and
+it's instant, free, and exactly reproducible." Both stay live - editing Impact re-renders them
+along with the rest of the roadmap summary.
 
 **Why the PRD and Roadmap Summary get their own Export step instead of relying on a passive
 print stylesheet alone (v1.2).**
@@ -397,7 +412,7 @@ The model doesn't actually know there's a 96% probability it's correct, so label
 "confidence" implies an objectivity it doesn't have. Every accepted classification carries a 0-1
 fit score, bucketed in code (`fitBucket()`) into **strong** or **moderate** - deliberately bucketed
 server-side with fixed thresholds rather than trusting the model's own qualitative self-labeling,
-the same reasoning behind bucketing RICE inputs for the v1.2 "Why this is #1" panel. A theme card
+the same reasoning behind labeling Impact/Severity for the v1.2 "Why this is #1" panel. A theme card
 surfaces a "⚠ N moderate fit" badge the moment it has any, and every evidence item shows its fit
 badge inline - uncertainty is a property of the evidence, not something to hide until a PM happens
 to click into it.
@@ -417,16 +432,16 @@ This is a copilot, not an autonomous PM - "nope, that's wrong, move it" needs to
 a re-run of the whole analysis. `reassignItem()` in `app.js` moves an item between theme evidence
 lists (or to/from Unclassified) entirely client-side, recomputing both themes' `frequency`
 immediately - the reassigned item is tagged `"manual"` fit so it's visually distinct from an AI
-classification, not just quietly blended back in. This only touches the clustering stage; if RICE
-was already run, the status bar tells the PM to re-run "Prioritize with RICE" to pick up the
+classification, not just quietly blended back in. This only touches the clustering stage; if
+prioritization was already run, the status bar tells the PM to re-run "Prioritize" to pick up the
 corrected frequency, rather than silently patching numbers in a table that's supposed to represent
 one coherent scoring pass.
 
-**Why the RICE prompt is trimmed to just theme/definition/severity/frequency.**
+**Why the prioritization prompt is trimmed to just theme/definition/severity/frequency.**
 Theme objects also carry `supporting_item_numbers` and per-item fit data - useful to the evidence
-UI, irrelevant to RICE scoring, and just extra tokens on a free tier where the daily request quota
-turned out to be tight enough to matter (see below). `prioritize.js` sends a trimmed copy to the
-model and merges the RICE result back onto the full original objects.
+UI, irrelevant to impact estimation, and just extra tokens on a free tier where the daily request
+quota turned out to be tight enough to matter (see below). `prioritize.js` sends a trimmed copy to
+the model and merges the result back onto the full original objects.
 
 **A live-testing finding that directly caused the Gemini → Groq switch (v1.5).** Retrying a
 transient `503` (which `llmClient.js` already did automatically, up to 3x) still counted each
@@ -474,7 +489,7 @@ server/
   db.js                    Optional Neon/Postgres client - DB_ENABLED is false with no DATABASE_URL
   routes/
     cluster.js            POST /api/cluster    - 3-call pipeline (discover, classify, validate), evidence gated + built in code
-    prioritize.js          POST /api/prioritize  - RICE scoring
+    prioritize.js          POST /api/prioritize  - Impact x Severity scoring
     prd.js                  POST /api/prd         - PRD generation
     projects.js             POST/GET/PUT /api/projects - save/load a shared project snapshot
   mocks/

@@ -312,7 +312,7 @@ analyzeBtn.addEventListener("click", async () => {
 // theme's supporting_item_numbers/frequency/item_fit came from the server's
 // three-call pipeline (discover -> classify -> validate, gated in code - see
 // cluster.js), and stay mutated in place here as the PM reassigns an item -
-// the same "edit in place, full re-render" pattern the RICE table already
+// the same "edit in place, full re-render" pattern the priority table already
 // uses for overrides.
 
 function themeById(themeId) {
@@ -351,7 +351,7 @@ function reassignItem(itemNumber, fromThemeId, toThemeId) {
   renderThemes();
   setStatus(
     `Moved feedback #${itemNumber} to ${toThemeId ? `"${themeById(toThemeId).theme}"` : "Unclassified"}.` +
-      (!priorityStage.hidden ? " Re-run 'Prioritize with RICE' to reflect the updated frequency." : ""),
+      (!priorityStage.hidden ? " Re-run 'Prioritize' to reflect the updated frequency." : ""),
   );
 }
 
@@ -527,14 +527,14 @@ prioritizeBtn.addEventListener("click", async () => {
   lastPrdTheme = null;
 
   setLoading(prioritizeBtn, true);
-  setStatus("Scoring themes with RICE...");
+  setStatus("Estimating impact...");
   try {
     const data = await postJSON("/api/prioritize", { themes: clusteredThemes });
     rankedThemes = data.themes;
     renderPriorityTable();
     priorityStage.hidden = false;
     priorityStage.scrollIntoView({ behavior: "smooth", block: "start" });
-    setStatus("Themes ranked by RICE score. Edit any input to override the AI's estimate - the score recalculates instantly.");
+    setStatus("Themes ranked by priority score (Impact × Severity). Edit Impact to override the AI's estimate - the score recalculates instantly.");
   } catch (err) {
     setStatus(err.message, true);
   } finally {
@@ -542,24 +542,15 @@ prioritizeBtn.addEventListener("click", async () => {
   }
 });
 
-// --- Stage 3: Prioritization table (RICE) ---
+// --- Stage 3: Prioritization table ---
 
-function recomputeRice(theme) {
-  theme.rice_score = Number(
-    ((theme.reach * theme.impact * (theme.confidence / 100)) / theme.effort).toFixed(2),
-  );
+function recomputePriority(theme) {
+  theme.priority_score = Number((theme.impact * theme.severity).toFixed(2));
 }
 
-function formatRiceValue(field, value) {
-  if (field === "confidence") return `${value}%`;
-  if (field === "effort") return `${value} wks`;
-  if (field === "reach") return Number(value).toLocaleString();
-  return String(value);
-}
-
-// Renders one editable RICE field as a table cell: the input itself, plus -
-// only once a PM has actually changed the value away from what the AI first
-// estimated - a small highlighted "AI: <original>" note with a one-click
+// Renders the one editable field (Impact) as a table cell: the input itself,
+// plus - only once a PM has actually changed it away from the AI's original
+// estimate - a small highlighted "AI: <original>" note with a one-click
 // reset. This is what makes an override visually obvious rather than a
 // silent edit indistinguishable from the AI's own number.
 function riceFieldCell(t, field, inputHtml) {
@@ -569,7 +560,7 @@ function riceFieldCell(t, field, inputHtml) {
       ${inputHtml}
       ${
         overridden
-          ? `<div class="ai-original">AI: ${formatRiceValue(field, t.ai_estimate[field])}
+          ? `<div class="ai-original">AI: ${t.ai_estimate[field]}
                <button type="button" class="reset-btn" data-field="${field}" title="Reset to AI estimate">&#8634;</button>
              </div>`
           : ""
@@ -579,7 +570,7 @@ function riceFieldCell(t, field, inputHtml) {
 }
 
 function renderPriorityTable() {
-  rankedThemes.sort((a, b) => b.rice_score - a.rice_score);
+  rankedThemes.sort((a, b) => b.priority_score - a.priority_score);
   priorityTableBody.innerHTML = "";
 
   rankedThemes.forEach((t, index) => {
@@ -588,20 +579,18 @@ function renderPriorityTable() {
     row.innerHTML = `
       <td>${index + 1}</td>
       <td>${escapeHtml(t.theme)}</td>
-      <td class="frequency-cell" title="Fact from your feedback sample - not editable, not the same as Reach">${t.frequency}</td>
-      ${riceFieldCell(t, "reach", `<input class="rice-input" type="number" min="0" step="1" data-field="reach" value="${t.reach}" />`)}
+      <td class="frequency-cell" title="Fact from your feedback sample">${t.frequency}</td>
+      <td class="severity-cell" title="Set during clustering - see the theme card">${t.severity}/5</td>
       ${riceFieldCell(
         t,
         "impact",
         `<select class="rice-input" data-field="impact">
-          ${[0.25, 0.5, 1, 2, 3]
+          ${[1, 2, 3, 4, 5]
             .map((v) => `<option value="${v}" ${t.impact === v ? "selected" : ""}>${v}</option>`)
             .join("")}
         </select>`,
       )}
-      ${riceFieldCell(t, "confidence", `<input class="rice-input" type="number" min="0" max="100" step="1" data-field="confidence" value="${t.confidence}" />`)}
-      ${riceFieldCell(t, "effort", `<input class="rice-input" type="number" min="0.25" step="0.25" data-field="effort" value="${t.effort}" />`)}
-      <td class="rice-score">${t.rice_score}</td>
+      <td class="rice-score">${t.priority_score}</td>
       <td class="no-print"><button class="reasoning-toggle" type="button">Details</button></td>
     `;
 
@@ -609,13 +598,11 @@ function renderPriorityTable() {
     reasoningRow.className = "reasoning-row hidden";
     reasoningRow.innerHTML = `
       <td></td>
-      <td colspan="8">
+      <td colspan="6">
         <div class="reasoning-grid">
           <div><strong>Frequency</strong> — a count of feedback items, computed directly from the themes returned by clustering, not an AI judgment call.</div>
-          <div><strong>Reach — why?</strong> ${escapeHtml(t.reach_reasoning)}</div>
+          <div><strong>Severity — why?</strong> ${escapeHtml(t.severity_reasoning ?? "")}</div>
           <div><strong>Impact — why?</strong> ${escapeHtml(t.impact_reasoning)}</div>
-          <div><strong>Confidence — why?</strong> ${escapeHtml(t.confidence_reasoning)}</div>
-          <div><strong>Effort — why?</strong> ${escapeHtml(t.effort_reasoning)}</div>
         </div>
       </td>
     `;
@@ -628,7 +615,7 @@ function renderPriorityTable() {
       input.addEventListener("change", () => {
         const field = input.dataset.field;
         t[field] = Number(input.value);
-        recomputeRice(t);
+        recomputePriority(t);
         renderPriorityTable(); // re-sort + re-render so rank/highlight/override state stay correct
       });
     });
@@ -637,7 +624,7 @@ function renderPriorityTable() {
       btn.addEventListener("click", () => {
         const field = btn.dataset.field;
         t[field] = t.ai_estimate[field];
-        recomputeRice(t);
+        recomputePriority(t);
         renderPriorityTable();
       });
     });
@@ -646,8 +633,8 @@ function renderPriorityTable() {
     priorityTableBody.appendChild(reasoningRow);
   });
 
-  // Keep the roadmap summary in sync if the PM edits RICE inputs after it's
-  // already been generated once, so the recommendation, its explanation, and
+  // Keep the roadmap summary in sync if the PM edits the priority table after
+  // it's already been generated once, so the recommendation, its explanation, and
   // its sensitivity analysis never go stale relative to the current inputs.
   if (!summaryStage.hidden) {
     renderRoadmapSummary();
@@ -665,94 +652,48 @@ summaryBtn.addEventListener("click", () => {
 // --- Stage 4: Roadmap Summary ---
 
 // Ranks a value against the full set of theme values on that same field and
-// buckets it Low/Moderate/High - relative to THIS dataset, not an arbitrary
-// fixed cutoff, since "high reach" means something different for a 5-theme
-// batch than a 30-theme one. Ties share the average rank so identical values
-// always get the same label.
-function percentileOf(value, allValues) {
-  if (allValues.length <= 1) return 50;
-  const sorted = [...allValues].sort((a, b) => a - b);
-  const n = sorted.length;
-  const first = sorted.indexOf(value);
-  let last = first;
-  while (last + 1 < n && sorted[last + 1] === value) last++;
-  return (((first + last) / 2) / (n - 1)) * 100;
-}
-
-function bucketLabel(percentile) {
-  if (percentile >= 66) return "High";
-  if (percentile <= 33) return "Low";
-  return "Moderate";
-}
-
-function impactLabel(impact) {
-  if (impact >= 2) return "High";
-  if (impact <= 0.5) return "Low";
-  return "Moderate";
-}
-
-function confidenceLabel(confidence) {
-  if (confidence >= 75) return "High";
-  if (confidence < 50) return "Low";
+// Both factors are fixed 1-5 scales (not sample-relative like the old
+// Reach/Effort were), so labels use the same absolute thresholds the
+// severity badges already use elsewhere, rather than a second bucketing
+// scheme a reader would have to learn.
+function scoreLabel(n) {
+  if (n >= 4) return "High";
+  if (n <= 2) return "Low";
   return "Moderate";
 }
 
 // Builds the #1 theme's ranking explanation entirely from numbers already on
-// screen - no LLM call. Labels are relative to the current theme set (reach,
-// effort) or fixed PM-standard bands (impact, confidence), never invented.
-function computeRankingExplanation(theme, allThemes) {
-  const reachLbl = bucketLabel(percentileOf(theme.reach, allThemes.map((t) => t.reach)));
-  const impactLbl = impactLabel(theme.impact);
-  const confLbl = confidenceLabel(theme.confidence);
-  const effortLbl = bucketLabel(percentileOf(theme.effort, allThemes.map((t) => t.effort)));
+// screen - no LLM call.
+function computeRankingExplanation(theme) {
+  const impactLbl = scoreLabel(theme.impact);
+  const severityLbl = scoreLabel(theme.severity);
 
-  const sentence = `"${theme.theme}" ranked highest because it combines ${reachLbl.toLowerCase()} reach, ${impactLbl.toLowerCase()} impact, and ${confLbl.toLowerCase()} confidence relative to its ${effortLbl.toLowerCase()} estimated effort.`;
+  const sentence = `"${theme.theme}" ranked highest because it combines ${impactLbl.toLowerCase()} impact with ${severityLbl.toLowerCase()} severity.`;
 
   return {
     sentence,
     factors: [
-      { label: "Reach", value: reachLbl },
       { label: "Impact", value: impactLbl },
-      { label: "Confidence", value: confLbl },
-      { label: "Effort", value: effortLbl },
+      { label: "Severity", value: severityLbl },
     ],
   };
 }
 
-// Computes, purely algebraically (no AI call), the single-factor thresholds
-// at which the #1 theme would be tied with the #2 theme, holding the other
-// two RICE inputs fixed - e.g. rice_score = reach*impact*confidence/100/effort,
-// so solving for the reach that ties top's score to second's score is just
-// rearranging that equation. Each threshold is independent of the others
-// (this is "what if only THIS changed", not a joint sensitivity analysis).
+// Computes, purely algebraically (no AI call), the Impact threshold at which
+// the #1 theme would be tied with the #2 theme - priority_score = impact *
+// severity, and severity isn't PM-editable here (it's set during
+// clustering), so Impact is the only lever that can actually move. Solving
+// impact * top.severity = second.priority_score for impact gives the exact
+// threshold.
 function computeSensitivity(top, second) {
   if (!second) return null;
-  const targetScore = second.rice_score;
   const result = { comparedTo: second.theme, lines: [] };
-
-  if (targetScore > 0) {
-    const effortThreshold = Math.round(((top.reach * top.impact * (top.confidence / 100)) / targetScore) * 10) / 10;
-    if (effortThreshold > top.effort) {
-      result.lines.push(`Estimated effort increases above ${effortThreshold} weeks`);
+  if (top.severity > 0) {
+    const impactThreshold = Math.floor(second.priority_score / top.severity);
+    if (impactThreshold >= 1 && impactThreshold < top.impact) {
+      result.lines.push(`Impact drops to ${impactThreshold} or below`);
     }
   }
-
-  const impactConf = top.impact * (top.confidence / 100);
-  if (impactConf > 0) {
-    const reachThreshold = Math.round((targetScore * top.effort) / impactConf);
-    if (reachThreshold >= 0 && reachThreshold < top.reach) {
-      result.lines.push(`Reach estimate falls below ${reachThreshold.toLocaleString()} users`);
-    }
-  }
-
-  const reachImpact = top.reach * top.impact;
-  if (reachImpact > 0) {
-    const confidenceThreshold = Math.round(((targetScore * top.effort) / reachImpact) * 100);
-    if (confidenceThreshold >= 0 && confidenceThreshold < top.confidence && confidenceThreshold <= 100) {
-      result.lines.push(`Confidence falls below ${confidenceThreshold}%`);
-    }
-  }
-
   return result;
 }
 
@@ -778,7 +719,7 @@ function renderRoadmapSummary() {
 
     let extra = "";
     if (i === 0) {
-      const explanation = computeRankingExplanation(t, rankedThemes);
+      const explanation = computeRankingExplanation(t);
       const sensitivity = computeSensitivity(t, rankedThemes[1]);
 
       extra += `
@@ -809,7 +750,7 @@ function renderRoadmapSummary() {
       ${i === 0 ? '<div class="recommended-badge">Recommended next initiative</div>' : ""}
       <h3>${i + 1}. ${escapeHtml(t.theme)}</h3>
       <p class="summary-meta">
-        ${t.frequency} feedback item${t.frequency === 1 ? "" : "s"} &bull; Severity ${t.severity}/5 &bull; RICE ${t.rice_score}
+        ${t.frequency} feedback item${t.frequency === 1 ? "" : "s"} &bull; Severity ${t.severity}/5 &bull; Priority ${t.priority_score}
       </p>
       <p class="hint">${escapeHtml(t.definition)}</p>
       ${extra}
@@ -900,7 +841,7 @@ copySummaryBtn.addEventListener("click", () => {
   const lines = ["ROADMAP RECOMMENDATION", ""];
   top3.forEach((t, i) => {
     lines.push(`${i + 1}. ${t.theme}`);
-    lines.push(`   RICE: ${t.rice_score} • Severity ${t.severity}/5 • ${t.frequency} feedback item${t.frequency === 1 ? "" : "s"}`);
+    lines.push(`   Priority: ${t.priority_score} • Severity ${t.severity}/5 • ${t.frequency} feedback item${t.frequency === 1 ? "" : "s"}`);
     lines.push(`   Decision: ${t.decision || "not yet decided"}`);
     lines.push("");
   });
@@ -983,7 +924,7 @@ feedbackInput.addEventListener("input", updateFeedbackCount);
 // falling back to "Feedback" - so step nav state doesn't need to be touched here.
 resetBtn.addEventListener("click", () => {
   const hasProgress = clusteredThemes.length > 0 || feedbackInput.value.trim().length > 0;
-  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, RICE edits, and any generated PRD.")) {
+  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, priority edits, and any generated PRD.")) {
     return;
   }
 
@@ -1106,7 +1047,7 @@ async function saveNow() {
 }
 
 // Called from every render function below once a project has a shareable
-// link, so edits (RICE overrides, reassignments, decisions, a new PRD) reach
+// link, so edits (priority overrides, reassignments, decisions, a new PRD) reach
 // anyone else with the link without the PM having to click Share again. A
 // failed background save is swallowed - the next edit's save will retry - so
 // a flaky connection doesn't interrupt anyone's work with an error popup.

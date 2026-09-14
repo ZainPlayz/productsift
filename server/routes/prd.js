@@ -19,7 +19,7 @@ Output valid Markdown with exactly these sections, in this order:
 ## Open Questions
 
 - Problem Statement: 2-4 sentences grounded in the theme's definition and evidence (frequency,
-  severity out of 5, RICE score) - state the problem, not the solution.
+  severity out of 5, priority score) - state the problem, not the solution.
 - Proposed Solution: 2-4 sentences describing ONE concrete, plausible solution direction that
   addresses the root cause named in the Problem Statement - not a restatement of the problem,
   and not a full spec. This is a recommendation to react to, not a final decision.
@@ -35,13 +35,13 @@ Output valid Markdown with exactly these sections, in this order:
 - Open Questions: 2-4 genuinely open questions a team would need to answer before scoping this.
 
 HARD RULE - no fabricated statistics: the only numbers you may state anywhere in the PRD are
-the exact frequency, severity, reach, impact, confidence, effort, and rice_score values given
-in the input JSON below (you may do simple arithmetic on them, e.g. quoting rice_score to 1
-decimal place). Never invent a specific user count, percentage, dollar figure, or date that
-does not come directly from those fields - Success Metrics and Open Questions should describe
-*what* to measure or investigate, not assert a number you don't have (e.g. write "reduce
-[metric] materially" or "define a target once real analytics are available", not "reduce by
-40%" unless 40% is literally one of the input values).`;
+the exact frequency, severity, impact, and priority_score values given in the input JSON below
+(you may do simple arithmetic on them, e.g. quoting priority_score to 1 decimal place). Never
+invent a specific user count, percentage, dollar figure, or date that does not come directly
+from those fields - Success Metrics and Open Questions should describe *what* to measure or
+investigate, not assert a number you don't have (e.g. write "reduce [metric] materially" or
+"define a target once real analytics are available", not "reduce by 40%" unless 40% is literally
+one of the input values).`;
 
 // The PM's decision status changes how the PRD should read - a document
 // drafted for something still under investigation should not sound like an
@@ -52,7 +52,7 @@ const DECISION_FRAMING = {
   Build: `Decision status: BUILD. The team has approved this to move forward. Write the PRD as
 an active commitment - "we will build..." framing throughout is appropriate.`,
   Investigate: `Decision status: INVESTIGATE. This has NOT been approved to build - it's flagged
-for further investigation, likely because the evidence (reach, confidence, or the theme itself)
+for further investigation, likely because the evidence (the impact estimate, or the theme itself)
 needs validation first. Frame the Problem Statement and Proposed Solution as a recommendation
 pending validation, not a commitment ("a likely direction, pending validation" rather than "we
 will"). Open Questions MUST include what specifically needs to be validated before this could

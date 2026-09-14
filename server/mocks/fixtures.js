@@ -2,8 +2,8 @@
 // clustering needs an LLM's judgment - there's no cheap heuristic substitute),
 // but the prioritize and PRD "mocks" below are genuine template functions that
 // operate on WHATEVER themes array they're given, mock or real. That means
-// MOCK_MODE exercises the exact same rendering and RICE-math code paths the
-// live API path uses - the only thing being skipped is the network call.
+// MOCK_MODE exercises the exact same rendering and priority-score code paths
+// the live API path uses - the only thing being skipped is the network call.
 //
 // CLUSTER_MOCK_RESULT represents the FINAL output of the v1.4 three-call
 // pipeline (discovery -> classification -> validation, gated in code - see
@@ -251,31 +251,19 @@ export const CLUSTER_MOCK_RESULT = {
   },
 };
 
-const IMPACT_BY_SEVERITY = { 1: 0.25, 2: 0.5, 3: 1, 4: 2, 5: 3 };
-const IMPACT_LABEL = { 0.25: "minimal", 0.5: "low", 1: "medium", 2: "high", 3: "massive" };
-
 // Returns estimates in the SAME ORDER as the input themes array - the caller
 // (prioritize.js) matches estimates back to themes by array position, the
 // same way the live Groq path does, so this must not re-sort.
 export function mockPrioritizeThemes(themes) {
   return themes.map((t) => {
-    const impact = IMPACT_BY_SEVERITY[t.severity] ?? 1;
-    // Heuristic stand-ins only - real usage should replace these with actual
-    // analytics (reach), a team estimate (effort), and real evidence strength
-    // (confidence). They exist so mock mode can exercise the full RICE flow.
-    const reach = t.frequency * 25;
-    const confidence = Math.min(50 + t.frequency * 3 + t.severity * 4, 95);
-    const effort = Math.max(1, Math.round((6 - t.severity) + t.theme.length / 12));
-
+    // Impact tracks severity directly in mock mode (a defensible baseline -
+    // the real prompt tells the live model the same thing, "usually tracks
+    // severity closely") - mock mode doesn't need to be clever, just
+    // representative enough to exercise the full prioritization flow.
+    const impact = t.severity;
     return {
-      reach,
-      reach_reasoning: `Mock estimate: ${t.frequency} feedback item(s) raised this in the sample, projected to ~${reach} affected users this quarter - frequency is a fact about the sample, this reach number is a judgment call about the wider user base, not the same thing.`,
       impact,
-      impact_reasoning: `Severity ${t.severity}/5 maps to a "${IMPACT_LABEL[impact]}" RICE impact score.`,
-      confidence,
-      confidence_reasoning: `Confidence derived from how often (${t.frequency}x) and consistently the theme appeared in the feedback batch.`,
-      effort,
-      effort_reasoning: `Mock-mode placeholder effort estimate (${effort} person-weeks) - replace with real engineering input before using this to plan a roadmap.`,
+      impact_reasoning: `Mock estimate: impact tracks this theme's severity (${t.severity}/5) directly.`,
     };
   });
 }
@@ -284,7 +272,7 @@ export function mockGeneratePRD(theme) {
   return `# PRD: ${theme.theme}
 
 ## Problem Statement
-${theme.definition} This theme was raised in ${theme.frequency} pieces of feedback with a severity rating of ${theme.severity}/5, and ranked #1 in this analysis with a RICE score of ${theme.rice_score}.${theme.decision ? ` [Mock mode] Decision status: ${theme.decision}.` : ""}
+${theme.definition} This theme was raised in ${theme.frequency} pieces of feedback with a severity rating of ${theme.severity}/5, and ranked #1 in this analysis with a priority score of ${theme.priority_score}.${theme.decision ? ` [Mock mode] Decision status: ${theme.decision}.` : ""}
 
 ## Proposed Solution
 [Mock mode] A concrete solution direction would go here in a real run - e.g. the specific mechanism that addresses the root cause described above, not just a restatement of the problem.
@@ -315,7 +303,8 @@ ${theme.example_quotes.map((q) => `> "${q}"`).join("\n\n")}
 
 ## Open Questions
 - Is this one root cause or several distinct issues being described the same way?
-- What does real engineering scoping say about effort, versus the mock-mode estimate used here?
+- What does real engineering scoping say about effort? (Not estimated by this tool - that
+  belongs in your ticket tracker once this is prioritized.)
 - Are there smaller, faster wins worth shipping ahead of a full fix?
 
 ---

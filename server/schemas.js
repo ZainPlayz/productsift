@@ -4,7 +4,7 @@ import { z } from "zod";
 // "importance" number: a theme can be mentioned constantly but be low-stakes
 // (a cosmetic nitpick), or mentioned rarely but be severe (a data-loss bug one
 // power user hit). Keeping frequency and severity apart lets the prioritization
-// step (RICE) weigh them independently via Reach and Impact.
+// step weigh them independently via Severity and (a separate call's) Impact.
 //
 // v1.4: v1.3 still asked one model call to both discover themes AND decide
 // item membership from the raw, noisy feedback text - which meant incidental
@@ -141,65 +141,38 @@ export const ValidationResponseSchema = z.object({
     .describe("EXACTLY one entry per item being validated, in the same order given."),
 });
 
-// Maps the model's qualitative impact_label to the numeric RICE multiplier -
-// see the comment on impact_label below for why this is a label, not a
-// number, in the schema itself.
-export const IMPACT_SCALE = { minimal: 0.25, low: 0.5, medium: 1, high: 2, massive: 3 };
-
-// RICE = (Reach x Impact x Confidence) / Effort. The model estimates only
-// these four inputs with reasoning - never the theme's identity fields
-// (name/summary/severity/etc), which prioritize.js re-attaches from the
-// original clustered theme by array position rather than trusting an echoed
-// copy back from this call. rice_score itself is always computed in code too,
-// so it's never at the mercy of the model's arithmetic, and the frontend can
-// recompute it live if a user edits any input.
-export const RiceEstimateSchema = z.object({
-  reach: z
+// v1.5: dropped Reach/Confidence/Effort. In practice nobody was editing them
+// (this is a synthesis/prioritization tool, not a ticket tracker - effort
+// estimation in person-weeks belongs in Jira/Asana/Linear, not here), and
+// Reach/Confidence in particular were AI guesses layered on top of an AI
+// guess with no real data behind either. What's left - Impact (this call)
+// and Severity (already produced during clustering, from real evidence) -
+// are both grounded in the actual feedback rather than invented numbers.
+// priority_score = impact * severity, computed in code (prioritize.js), same
+// "never trust the model's own arithmetic" pattern this project has used
+// throughout.
+export const PriorityEstimateSchema = z.object({
+  impact: z
     .number()
-    .min(0)
+    .int()
+    .min(1)
+    .max(5)
     .describe(
-      "Estimated number of users/customers this would affect in the next quarter. This is NOT " +
-        "the same number as frequency (how many feedback items raised the issue in this batch) - " +
-        "frequency is a fact about the sample you were given, reach is a judgment call projecting " +
-        "onto the broader user base. Do not just multiply frequency by a fixed constant; use the " +
-        "theme's summary and severity as evidence for how widespread the underlying problem likely is.",
+      "1-5: how much fixing this would move the needle for an affected user. Related to severity " +
+        "(how bad the reported problem is) but not identical to it - severity is about how bad the " +
+        "problem is today, impact is about how much value fixing it delivers. Usually tracks severity " +
+        "closely, but use judgment: a severe-but-rare edge case can have lower impact than a moderate " +
+        "problem affecting a core workflow.",
     ),
-  reach_reasoning: z.string(),
-  // A union of numeric literals (0.25/0.5/1/2/3) worked fine as JSON Schema
-  // for Gemini's best-effort structured output, but Groq's *strict* mode
-  // compiler rejected it live ("cannot include both 'integer' and 'number'")
-  // when mixing whole and fractional consts under one property - a real
-  // constraint found by testing against the actual API, not assumed. A
-  // string enum sidesteps the ambiguity entirely; prioritize.js maps the
-  // label to its numeric RICE multiplier via IMPACT_SCALE below, the same
-  // "model gives a judgment, code computes the number" pattern rice_score
-  // already uses.
-  impact_label: z
-    .enum(["minimal", "low", "medium", "high", "massive"])
-    .describe(
-      "RICE impact scale, how much fixing this would move the needle for an affected user: " +
-        "minimal, low, medium, high, or massive.",
-    ),
-  impact_reasoning: z.string(),
-  confidence: z
-    .number()
-    .min(0)
-    .max(100)
-    .describe("0-100: confidence in the reach/impact estimates given the evidence available"),
-  confidence_reasoning: z.string(),
-  effort: z
-    .number()
-    .min(0.25)
-    .describe("Estimated engineering effort in person-weeks to address the root cause"),
-  effort_reasoning: z.string(),
+  impact_reasoning: z.string().describe("One sentence a PM could defend to a stakeholder who asks 'why?'"),
 });
 
 export const PrioritizeResponseSchema = z.object({
   themes: z
-    .array(RiceEstimateSchema)
+    .array(PriorityEstimateSchema)
     .min(1)
     .describe(
-      "Exactly one RICE estimate per input theme, in the exact same order the themes were given - " +
+      "Exactly one impact estimate per input theme, in the exact same order the themes were given - " +
         "do not add, remove, merge, or reorder themes.",
     ),
 });

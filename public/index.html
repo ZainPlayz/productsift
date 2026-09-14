@@ -24,7 +24,7 @@
       <nav aria-label="Analysis steps" id="stepNav">
         <button data-stage="inputStage" class="step active" aria-current="step"><span class="step-number">1</span><span>Feedback<small>Paste or upload raw feedback</small></span></button>
         <button data-stage="themesStage" class="step" disabled><span class="step-number">2</span><span>Themes<small>AI groups feedback into patterns</small></span></button>
-        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities<small>Themes ranked by RICE score</small></span></button>
+        <button data-stage="priorityStage" class="step" disabled><span class="step-number">3</span><span>Priorities<small>Themes ranked by priority score</small></span></button>
         <button data-stage="summaryStage" class="step" disabled><span class="step-number">4</span><span>Roadmap<small>Top picks + your Build/Defer decision</small></span></button>
         <button data-stage="prdStage" class="step" disabled><span class="step-number">5</span><span>PRD<small>Auto-drafted one-pager per theme</small></span></button>
         <button data-stage="exportStage" class="step" disabled><span class="step-number">6</span><span>Export<small>Print, or copy as text</small></span></button>
@@ -53,15 +53,15 @@
       <div id="unclassifiedSection"></div>
       <div class="controls-row no-print">
         <button id="addThemeBtn" class="btn btn-secondary">+ New Theme</button>
-        <button id="prioritizeBtn" class="btn btn-primary">Prioritize with RICE</button>
+        <button id="prioritizeBtn" class="btn btn-primary">Prioritize</button>
       </div>
     </section>
 
     <!-- Stage 3: Prioritization -->
     <section class="card" id="priorityStage" hidden>
-      <h2>Prioritized Roadmap (RICE)</h2>
-      <p class="hint">Edit any input to override the AI's estimate — the score recalculates instantly.</p>
-      <details class="scoring-guide"><summary>How RICE scoring works</summary><p>Score = (Reach × Impact × Confidence / 100) ÷ Effort. Frequency counts items in your sample; Reach estimates affected users across your user base. Edited values are marked as your overrides and can be reset.</p></details>
+      <h2>Prioritized Roadmap</h2>
+      <p class="hint">Edit Impact to override the AI's estimate — the score recalculates instantly.</p>
+      <details class="scoring-guide"><summary>How priority scoring works</summary><p>Score = Impact × Severity. Frequency counts items in your sample. Severity is set during clustering (see each theme card); Impact is AI-estimated here, both on a 1-5 scale. Edited Impact values are marked as your override and can be reset.</p></details>
       <div class="table-wrap">
         <table id="priorityTable">
           <thead>
@@ -69,11 +69,9 @@
               <th>#</th>
               <th>Theme</th>
               <th>Frequency</th>
-              <th>Reach</th>
+              <th>Severity</th>
               <th>Impact</th>
-              <th>Confidence %</th>
-              <th>Effort (wks)</th>
-              <th>RICE Score</th>
+              <th>Priority Score</th>
               <th class="no-print"></th>
             </tr>
           </thead>

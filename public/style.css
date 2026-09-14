@@ -105,7 +105,7 @@ body {
   cursor: default;
 }
 
-/* Plain display text (theme names, quotes, RICE cells, summary lines, etc.)
+/* Plain display text (theme names, quotes, priority table cells, summary lines, etc.)
    otherwise shows the browser's default I-beam cursor on hover, which reads
    as an editable field even though it isn't one. `cursor` alone fixes that -
    it does NOT disable selection, so text stays fully selectable/copyable;
@@ -407,7 +407,7 @@ textarea {
 
 .table-wrap { overflow-x: auto; margin-top: 14px; }
 
-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; min-width: 760px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; min-width: 600px; }
 
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 
@@ -426,7 +426,7 @@ tr.rank-1 td { background: var(--accent); font-weight: 600; }
   color: var(--text);
 }
 
-.frequency-cell {
+.frequency-cell, .severity-cell {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }

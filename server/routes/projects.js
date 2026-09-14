@@ -4,7 +4,7 @@ import { sql, DB_ENABLED, ensureSchema } from "../db.js";
 
 const router = Router();
 
-// Generous but not unbounded - a full analysis (themes, quotes, RICE
+// Generous but not unbounded - a full analysis (themes, quotes, priority
 // reasoning, a PRD draft) is a few KB of JSON; this just guards against a
 // pathological payload eating into Neon's free-tier storage.
 const MAX_DATA_BYTES = 500_000;
