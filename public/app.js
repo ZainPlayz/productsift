@@ -8,17 +8,7 @@ let feedbackItems = []; // numbered (1-based) split of the submitted feedback, f
 let lastPrdMarkdown = ""; // raw markdown of the most recently generated PRD, for "Copy PRD"
 let lastPrdTheme = null; // the theme that PRD was generated for, for the decision badge
 
-// --- BYOK (bring your own Groq key) ---
-// A visitor's own key means their requests run live under THEIR quota, not
-// this server's shared one - stored only in this browser (localStorage),
-// sent only as a request header, never written into shared/saved project
-// state (snapshotState() below never touches it).
-const GROQ_KEY_STORAGE = "groqApiKey";
-function getUserApiKey() {
-  return localStorage.getItem(GROQ_KEY_STORAGE) || "";
-}
-let serverMockMode = false; // raw server default from /api/status, untouched by whether this visitor has their own key
-let isMockMode = false; // effective: server mock mode AND no visitor key - Analyze forces the bundled sample data only in this case, since mock's canned response never reads the actual input
+let isMockMode = false; // set from /api/status below - mock mode's canned response is the same regardless of input, so Analyze forces the bundled sample data instead of pretending arbitrary text drives it
 
 // --- Sharing (persisted "living" project link, e.g. /p/abc123) ---
 let currentProjectId = null; // null until the first Share click, or until hydrated from a /p/:id link
@@ -67,7 +57,6 @@ const modeBanner = $("modeBanner");
 const themeToggle = $("themeToggle");
 const resetBtn = $("resetBtn");
 const shareBtn = $("shareBtn");
-const apiKeyBtn = $("apiKeyBtn");
 
 // --- Theme (light/dark) ---
 // The <head> script already applied any saved choice before first paint, to
@@ -134,16 +123,10 @@ function cycleStatus(messages, intervalMs = 2200) {
   return () => clearInterval(id);
 }
 
-// includeGroqKey defaults on since most POSTs here hit an LLM-calling route -
-// the one exception (saving a shared project) passes false explicitly so a
-// visitor's key never gets sent to a route that has no use for it.
-async function postJSON(url, body, includeGroqKey = true) {
-  const headers = { "Content-Type": "application/json" };
-  const groqKey = includeGroqKey ? getUserApiKey() : "";
-  if (groqKey) headers["X-Groq-Api-Key"] = groqKey;
+async function postJSON(url, body) {
   const res = await fetch(url, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -263,11 +246,22 @@ fileInput.addEventListener("change", async () => {
   updateFeedbackCount();
 });
 
-analyzeBtn.addEventListener("click", async () => {
+analyzeBtn.addEventListener("click", () => runAnalysis());
+
+// Pulled out of the click listener so runAutoDemo() (below) can await the
+// same logic instead of simulating a click and hoping it finished - returns
+// true/false so a chained caller knows whether to continue to the next stage.
+async function runAnalysis() {
+  // Guards the brief window before setLoading() below actually disables the
+  // button - e.g. the auto-demo is already mid-flight and a fast click (or a
+  // second automated trigger) lands before that happens. A real click on an
+  // already-disabled button never reaches here at all; this only matters for
+  // that narrow race.
+  if (analyzeBtn.disabled) return false;
   let feedback = feedbackInput.value.trim();
   if (!feedback && !isMockMode) {
     setStatus("Paste some feedback first, or click 'Load Sample Data'.", true);
-    return;
+    return false;
   }
 
   // Mock mode's response is a fixed canned dataset - it does not read the
@@ -284,7 +278,7 @@ analyzeBtn.addEventListener("click", async () => {
       updateFeedbackCount();
     } catch (err) {
       setStatus("Could not load the bundled sample dataset for demo mode.", true);
-      return;
+      return false;
     }
   }
 
@@ -316,13 +310,15 @@ analyzeBtn.addEventListener("click", async () => {
       `Found ${clusteredThemes.length} distinct theme(s) across ${feedbackItems.length} feedback item(s)` +
         (unclassifiedItems.length ? `, ${unclassifiedItems.length} unclassified.` : "."),
     );
+    return true;
   } catch (err) {
     stopCycle();
     setStatus(err.message, true);
+    return false;
   } finally {
     setLoading(analyzeBtn, false);
   }
-});
+}
 
 // --- Stage 2: Themes ---
 
@@ -537,7 +533,10 @@ addThemeBtn.addEventListener("click", () => {
   setStatus(`Created theme "${newTheme.theme}". Move items into it from any theme's evidence list, or from Unclassified.`);
 });
 
-prioritizeBtn.addEventListener("click", async () => {
+prioritizeBtn.addEventListener("click", () => runPrioritize());
+
+async function runPrioritize() {
+  if (prioritizeBtn.disabled) return false; // see the matching guard in runAnalysis()
   summaryStage.hidden = true;
   prdStage.hidden = true;
   exportStage.hidden = true;
@@ -553,12 +552,14 @@ prioritizeBtn.addEventListener("click", async () => {
     priorityStage.hidden = false;
     priorityStage.scrollIntoView({ behavior: "smooth", block: "start" });
     setStatus("Themes ranked by priority score (Impact × Severity). Edit Impact to override the AI's estimate - the score recalculates instantly.");
+    return true;
   } catch (err) {
     setStatus(err.message, true);
+    return false;
   } finally {
     setLoading(prioritizeBtn, false);
   }
-});
+}
 
 // --- Stage 3: Prioritization table ---
 
@@ -661,11 +662,13 @@ function renderPriorityTable() {
 }
 
 const summaryBtn = $("summaryBtn");
-summaryBtn.addEventListener("click", () => {
+summaryBtn.addEventListener("click", () => showSummary());
+
+function showSummary() {
   renderRoadmapSummary();
   summaryStage.hidden = false;
   summaryStage.scrollIntoView({ behavior: "smooth", block: "start" });
-});
+}
 
 // --- Stage 4: Roadmap Summary ---
 
@@ -874,57 +877,42 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// Recomputes everything that depends on "does THIS visitor have their own
-// Groq key" - called once at load (after /api/status resolves, so
-// serverMockMode is known) and again every time the API Key button changes
-// the stored key, so the effective mode never goes stale mid-session.
-function updateApiKeyUI() {
-  const hasKey = Boolean(getUserApiKey());
-  isMockMode = serverMockMode && !hasKey;
-  apiKeyBtn.textContent = hasKey ? "Using your key" : "API Key";
-  apiKeyBtn.title = hasKey
-    ? "You're using your own Groq API key, stored only in this browser. Click to change or remove it."
-    : "Use your own free Groq API key instead of this server's shared/demo key - get one at console.groq.com/keys.";
-  if (hasKey) {
-    modeBanner.hidden = true;
-  } else if (serverMockMode) {
-    modeBanner.hidden = false;
-    modeBanner.textContent = "Demo mode: showing sample results, not live Groq output. Analyze always runs on the bundled sample dataset here, regardless of what's in the box below. Use your own free Groq API key (top right) to run real analysis instead.";
-  } else {
-    modeBanner.hidden = true;
-  }
+// A visitor landing on an empty textarea has to already know this tool does
+// something before they'll click "Load Sample Data" then "Analyze"
+// themselves - most won't. Running the demo automatically means the very
+// first thing they see is the tool actually working, not a blank form.
+// Chains through to the Roadmap Summary (the fullest single view of what
+// this does - themes, priority, the #1 recommendation with reasoning) and
+// deliberately stops there; PRD/Export stay for the visitor to trigger
+// themselves once they're exploring on their own terms.
+async function runAutoDemo() {
+  setStatus("Running an automatic demo on sample feedback data - this is a test run, not your own input or live Groq output.");
+  if (!(await runAnalysis())) return;
+  if (!(await runPrioritize())) return;
+  showSummary();
+  setStatus("This is a demo run on sample data, not something you entered or live Groq output.");
 }
-updateApiKeyUI();
-
-apiKeyBtn.addEventListener("click", () => {
-  const current = getUserApiKey();
-  const input = prompt(
-    current
-      ? "Update your Groq API key. Leave blank and confirm to remove it and use this server's default mode instead."
-      : "Enter your own free Groq API key (no credit card - console.groq.com/keys) so your analyses run under your own quota instead of this server's shared/demo key.",
-    current,
-  );
-  if (input === null) return; // cancelled
-  const trimmed = input.trim();
-  if (trimmed) {
-    localStorage.setItem(GROQ_KEY_STORAGE, trimmed);
-    setStatus("Using your own Groq API key for this browser - analyses now run live under your own quota.");
-  } else {
-    localStorage.removeItem(GROQ_KEY_STORAGE);
-    setStatus("Removed your Groq API key - back to this server's default mode.");
-  }
-  updateApiKeyUI();
-});
 
 (async function showModeBanner() {
   try {
     const res = await fetch("/api/status");
     const { mockMode, sharingEnabled } = await res.json();
-    serverMockMode = mockMode;
-    updateApiKeyUI();
+    isMockMode = mockMode;
+    if (mockMode) {
+      modeBanner.hidden = false;
+      modeBanner.textContent = "Demo mode: this is a test run on sample data, not live Groq output.";
+    }
     if (!sharingEnabled) {
       shareBtn.disabled = true;
       shareBtn.title = "Sharing isn't configured on this server (needs DATABASE_URL) - see the README.";
+    }
+    // Only for a fresh, untouched load in demo mode - never on a /p/:id
+    // shared-project link (that link's own saved state should win), and
+    // never if the visitor already started something themselves in the
+    // moment it took this status check to resolve.
+    const onSharedLink = /^\/p\//.test(location.pathname);
+    if (isMockMode && !onSharedLink && !clusteredThemes.length && !feedbackInput.value.trim()) {
+      runAutoDemo();
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */
@@ -1124,7 +1112,7 @@ shareBtn.addEventListener("click", async () => {
   setLoading(shareBtn, true);
   try {
     if (!currentProjectId) {
-      const res = await postJSON("/api/projects", { data: snapshotState() }, false);
+      const res = await postJSON("/api/projects", { data: snapshotState() });
       currentProjectId = res.id;
       history.replaceState(null, "", `/p/${currentProjectId}`);
     } else {

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, toGroqResponseFormat, createChatCompletionWithRetry, resolveGroqRequest, friendlyGroqError } from "../llmClient.js";
+import { MODEL, MOCK_MODE, toGroqResponseFormat, createChatCompletionWithRetry } from "../llmClient.js";
 import {
   DiscoveryResponseSchema,
   ClassificationResponseSchema,
@@ -40,12 +40,11 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "No feedback items found (each item should be on its own line)." });
     }
 
-    const { mock, client } = resolveGroqRequest(req.get("X-Groq-Api-Key"));
-    const result = mock ? CLUSTER_MOCK_RESULT : await clusterWithGroq(items, client);
+    const result = MOCK_MODE ? CLUSTER_MOCK_RESULT : await clusterWithGroq(items);
     res.json({ ...result, items });
   } catch (err) {
     console.error("cluster error:", err);
-    res.status(err.status === 401 ? 401 : 500).json({ error: friendlyGroqError(err) || "Failed to cluster feedback.", detail: err.message });
+    res.status(500).json({ error: "Failed to cluster feedback.", detail: err.message });
   }
 });
 
@@ -67,9 +66,9 @@ raw user feedback. Do two things, in order:
 
 Do not assign items to themes here - that happens in a separate step.`;
 
-async function discoverThemes(items, client) {
+async function discoverThemes(items) {
   const numberedList = items.map((item, i) => `${i + 1}. ${item}`).join("\n");
-  const response = await createChatCompletionWithRetry(client, {
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
     messages: [
       { role: "system", content: DISCOVERY_PROMPT },
@@ -101,9 +100,9 @@ the single most important judgment in this task. Use theme_id "${NONE_THEME}" fo
 runner-up. A classification you are only moderately sure about should get a moderate fit score,
 not be rounded up - a downstream system, not you, decides whether a score is high enough to act on.`;
 
-async function classifyIssues(itemPrimaryIssues, themes, client) {
+async function classifyIssues(itemPrimaryIssues, themes) {
   const themesForPrompt = themes.map((t) => ({ theme_id: t.theme_id, theme: t.theme, definition: t.definition }));
-  const response = await createChatCompletionWithRetry(client, {
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
     messages: [
       { role: "system", content: CLASSIFICATION_PROMPT },
@@ -138,7 +137,7 @@ represent this item's primary issue? Be skeptical - if the connection is a stret
 mention, or addresses a secondary detail rather than the main complaint, answer false. You may
 only confirm or reject - you cannot reassign the item to a different theme.`;
 
-async function validateClassifications(toValidate, items, primaryIssueByItem, themeById, client) {
+async function validateClassifications(toValidate, items, primaryIssueByItem, themeById) {
   const forPrompt = toValidate.map((c) => ({
     item_number: c.item_number,
     original_feedback: items[c.item_number - 1],
@@ -146,7 +145,7 @@ async function validateClassifications(toValidate, items, primaryIssueByItem, th
     assigned_theme: themeById.get(c.tentativeThemeId).theme,
     theme_definition: themeById.get(c.tentativeThemeId).definition,
   }));
-  const response = await createChatCompletionWithRetry(client, {
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
     messages: [
       { role: "system", content: VALIDATION_PROMPT },
@@ -160,12 +159,12 @@ async function validateClassifications(toValidate, items, primaryIssueByItem, th
 
 // --- Orchestration + the code-owned acceptance gate ---
 
-async function clusterWithGroq(items, client) {
-  const { item_primary_issues, themes } = await discoverThemes(items, client);
+async function clusterWithGroq(items) {
+  const { item_primary_issues, themes } = await discoverThemes(items);
   const primaryIssueByItem = new Map(item_primary_issues.map((p) => [p.item_number, p.primary_issue]));
   const themeByIdMap = mapThemesById(themes);
 
-  const classifications = themes.length > 0 ? await classifyIssues(item_primary_issues, themes, client) : [];
+  const classifications = themes.length > 0 ? await classifyIssues(item_primary_issues, themes) : [];
   const classificationByItem = new Map(classifications.map((c) => [c.item_number, c]));
 
   // Gate 1 (code, not the model): accept only if the top match is both
@@ -191,7 +190,7 @@ async function clusterWithGroq(items, client) {
   // capable of the same mistake it's meant to catch.
   const toValidate = tentative.filter((t) => t.tentativeThemeId);
   const validations =
-    toValidate.length > 0 ? await validateClassifications(toValidate, items, primaryIssueByItem, themeByIdMap, client) : [];
+    toValidate.length > 0 ? await validateClassifications(toValidate, items, primaryIssueByItem, themeByIdMap) : [];
   const validationByItem = new Map(validations.map((v) => [v.item_number, v]));
 
   const resolved = tentative.map((t) => {

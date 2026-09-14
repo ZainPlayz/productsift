@@ -10,6 +10,11 @@ exportable artifact.**
 
 ## What it does
 
+On a `MOCK_MODE=true` deployment, landing on an empty textarea auto-runs the full demo (Analyze →
+Prioritize → Roadmap Summary) on the bundled sample data, so the first thing a visitor sees is the
+tool actually working, not a blank form - the mode banner and status text make clear throughout
+that it's a test run on sample data, not live output (see **Why demo mode runs itself** below).
+
 1. **Input** — paste raw feedback, or upload a `.txt` file, or upload a `.csv` export straight from
    App Store Connect, Play Console, Zendesk, Intercom, or a form tool. The CSV parser (real
    RFC4180-style parsing — quoted fields, embedded commas/newlines — not a naive `split(",")`)
@@ -46,20 +51,15 @@ exportable artifact.**
    same link (roughly a second after the edit, debounced) so the next person to open it sees it
    too. Requires `DATABASE_URL` to be set (see [Setup](#setup)); without it the button just
    disables itself with an explanatory tooltip instead of breaking.
-8. **Bring your own Groq key** — click "API Key" (top right) to use your own free Groq key instead
-   of whatever this server is configured with. It's stored only in your browser (never saved to a
-   shared project, never sent anywhere but this app's own `/api/*` routes) and always means your
-   analyses run live, under your own quota, regardless of whether this deployment is in demo mode.
 
 ## Whose API quota gets used?
 
-By default, one deployment = one shared server-side key = every visitor draws from the same quota,
-which is exactly why public deployments default to demo data (see **Deploy** below) - otherwise
-enough visitors clicking around exhausts the deployer's free tier and breaks the demo for everyone.
-Clicking **API Key** (top right) and pasting your own free Groq key fixes this per-visitor: your
-key is stored in `localStorage` (this browser only), sent as a request header on your own calls,
-and never written into a shared project's saved state - so two people can each use the same public
-link with their own keys and never touch each other's quota.
+One deployment = one server-side `GROQ_API_KEY` = every visitor shares that quota. A per-IP rate
+limiter (`server/index.js`, 10 LLM requests/minute) is what actually stands between that and
+abuse - it stops one IP from burning through the quota in a burst, though it doesn't cap total
+requests across many different real visitors. If you want a public deployment to stay demo-only
+regardless of traffic, set `MOCK_MODE=true` instead (see **Deploy** below) - every visitor gets
+canned sample results, never a real API call.
 
 ## Setup
 
@@ -72,14 +72,11 @@ By default `.env` has `MOCK_MODE=true`, so you can run the whole app immediately
 API key** — every step returns realistic templated data instead of calling Groq. This is
 how the pipeline was built and tested end-to-end.
 
-To get real, AI-generated clustering/scoring/PRD output, either:
+To get real, AI-generated clustering/scoring/PRD output:
 
-- **Click "API Key"** in the running app and paste your own free key (get one, no credit card, at
-  [console.groq.com/keys](https://console.groq.com/keys)) - works immediately, no `.env` edit or
-  restart needed, and always runs live regardless of `MOCK_MODE` below. This is the only setup
-  step required for a visitor to a deployment that isn't yours; or
-- **Set the server's own key**: `GROQ_API_KEY=...` and `MOCK_MODE=false` in `.env`, used as the
-  fallback for any visitor who hasn't entered their own.
+1. Get a **free** key (no credit card needed) at
+   [console.groq.com/keys](https://console.groq.com/keys).
+2. In `.env`, set `GROQ_API_KEY=...` and `MOCK_MODE=false`.
 
 To enable the **Share** button (optional):
 
@@ -121,14 +118,13 @@ steps to go live:
    `DATABASE_URL` too (a free Neon Postgres string) to enable the Share button on this deployment.
 3. Deploy. Render builds with `npm install` and starts with `npm start`.
 
-**Public deployments default to `MOCK_MODE=true`** (set in `render.yaml`) — a shared free-tier
-Groq quota (1,000 requests/day for the default model) would otherwise be exhausted by enough
-visitors clicking around, breaking the demo for everyone including you. This used to be a real
-tradeoff (flip it to `false` and accept a shared-quota risk, or stay in demo mode for everyone);
-it mostly isn't anymore, since any visitor can click **API Key** and paste their own free key to
-get real live analysis under their own quota without touching yours at all. Flip `MOCK_MODE` to
-`false` in the Render dashboard only if you specifically want visitors *without* their own key to
-still get live analysis using your server's key.
+**Public deployments default to `MOCK_MODE=false`** (set in `render.yaml`) — every visitor shares
+this deployment's `GROQ_API_KEY`, protected by the per-IP rate limiter in `server/index.js` (10 LLM
+requests/minute) rather than by defaulting to demo data. That limiter stops one IP from bursting
+through the quota; it doesn't cap total requests across many different real visitors, so a shared
+free-tier quota (1,000 requests/day for the default model) can still run out under enough genuine
+traffic. Flip `MOCK_MODE` to `true` in the Render dashboard if you'd rather a given deployment stay
+demo-only regardless of how much traffic it gets.
 
 Any other Node host works too (Railway, Fly.io, etc.) — the app only needs `npm install` /
 `npm start`, a `PORT` env var (already read from `process.env.PORT`), and the vars above.
@@ -238,17 +234,15 @@ already changed once during this project's own development.
 
 ## Security & rate limiting
 
-- **This server's own API key never reaches the browser.** It lives only in `.env`, read
-  server-side by `server/llmClient.js`. The frontend only ever talks to this app's own `/api/*`
-  routes. A *visitor's own* key (the "API Key" button, v1.7) is different by design - it's
-  theirs, typed into their own browser, stored in that browser's `localStorage`, and sent only as
-  a request header to this app's own routes on this same origin - never logged server-side, never
-  written into a saved/shared project's state, and gone the moment they clear it or their browser
-  data.
+- **The API key never reaches the browser.** It lives only in `.env`, read server-side by
+  `server/llmClient.js`. The frontend only ever talks to this app's own `/api/*` routes.
 - **Per-IP rate limiting** (`express-rate-limit`, in `server/index.js`) caps the three
   LLM-calling routes (`/api/cluster`, `/api/prioritize`, `/api/prd`) at 10 requests/minute per
-  IP. This protects a free-tier quota (or a paid bill) from a runaway client loop or casual
-  abuse, and returns a clear `429` with a JSON error the frontend already displays.
+  IP. This protects a shared free-tier quota (or a paid bill) from a runaway client loop or one
+  abusive IP, and returns a clear `429` with a JSON error the frontend already displays. It's a
+  burst guard, not a total-spend cap - it doesn't limit the sum of requests across many distinct
+  real visitors, so a busy public deployment can still exhaust a shared daily quota under genuine
+  traffic (see **Deploy** above for the `MOCK_MODE` fallback if that risk matters for your case).
 - **Standard security headers** (`helmet`) — CSP, no-sniff, frame-ancestors, etc. The CSP is
   locked to same-origin with one explicit exception for the jsdelivr CDN `index.html` loads
   `marked.js` from.
@@ -335,21 +329,34 @@ mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the
 math and the UI — without needing an API key or spending anything on LLM calls during
 development.
 
-**Why a visitor can bring their own Groq key, and why it's resolved per-request instead of at
-server startup (v1.7).**
-The original design had exactly one Groq client, built once from `process.env.GROQ_API_KEY` when
-the server started - fine for local use, but it means every visitor to a public deployment shares
-one quota. `server/llmClient.js`'s `resolveGroqRequest(userApiKey)` now runs per-request: given
-whatever came in on a request's `X-Groq-Api-Key` header, it builds a fresh `Groq` client for that
-one request if present, or falls back to the server's own client/`MOCK_MODE` if not. Every LLM-
-calling route (`cluster.js`, `prioritize.js`, `prd.js`) reads the header and threads the resulting
-client through its call chain instead of importing a shared singleton - `cluster.js`'s three
-sequential calls (discover → classify → validate) all use the same per-request client. The key
-itself is never logged, never persisted server-side, and never included in a saved/shared project
-(`snapshotState()` in `app.js` doesn't touch `localStorage`) - it exists only for the lifetime of
-the request that carried it. A 401 (wrong or expired key) gets a message that says what to do
-about it (`friendlyGroqError()`), since "the request failed" isn't actionable when the key could
-belong to any visitor, not just the deployer who'd recognize their own mistake.
+**Why demo mode runs itself instead of waiting for a click.**
+A visitor landing on an empty textarea has to already know this tool does something before
+they'll click "Load Sample Data" then "Analyze" themselves - most won't, and a portfolio demo
+that requires the viewer to already understand it defeats its own purpose. `runAutoDemo()` in
+`app.js` fires once, only when the page loads fresh in mock mode with nothing already in progress
+(guarded against a `/p/:id` shared-project link, which should hydrate its own saved state instead,
+and against a race with whatever the visitor may have already started themselves in the moment
+`/api/status` took to resolve) - it chains `runAnalysis()` → `runPrioritize()` → `showSummary()`,
+stopping at the Roadmap Summary (the fullest single view of what this tool does) rather than
+auto-generating a PRD, which stays a deliberate per-theme choice for the visitor to make
+themselves. Both `runAnalysis()` and `runPrioritize()` were factored out of their button click
+listeners specifically so this could `await` the real logic instead of simulating clicks and
+hoping they landed in order; each also bails out (`return false`) if its button is already
+disabled, guarding the narrow case where a real click and the auto-demo could otherwise both
+start the same call.
+
+**Why per-visitor Groq keys were tried, then reverted back to one shared server key (v1.7).**
+Briefly, every visitor could paste their own Groq key (stored client-side, sent per-request on a
+header) so a public deployment's traffic never touched the deployer's own quota - each `/api/*`
+route resolved a fresh Groq client per request instead of importing one shared singleton. Reverted
+in favor of the simpler model this project now uses: one server-side key, one rate limiter. The
+per-visitor version added real surface area (a client-side credential store, a resolve-per-request
+code path threaded through three sequential LLM calls in `cluster.js`, 401-handling written to be
+actionable for an arbitrary visitor's key rather than just the deployer's) for a problem the
+existing rate limiter already covers the common case of - a runaway loop or one abusive IP. What
+it doesn't cover - a shared quota exhausted by many distinct legitimate visitors on a busy public
+deployment - is a real, named tradeoff (see **Deploy** and **Security & rate limiting** above), not
+one this project is currently solving for.
 
 **Why structured outputs (Zod schemas) instead of asking the model to "return JSON".**
 `server/schemas.js` defines the exact shape expected back from the clustering and
@@ -524,7 +531,7 @@ remember to re-share it.
 ```
 server/
   index.js              Express app: helmet, rate limiting, serves public/, mounts routes, serves /p/:id
-  llmClient.js            Per-request Groq client resolution (server key or a visitor's own), MODEL, Zod-to-JSON-Schema helper
+  llmClient.js            Groq client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
   schemas.js              Zod schemas shared by the cluster & prioritize routes
   feedbackItems.js         Splits raw feedback into the numbered items themes trace back to
   db.js                    Optional Neon/Postgres client - DB_ENABLED is false with no DATABASE_URL

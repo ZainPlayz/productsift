@@ -6,13 +6,16 @@ services:
     buildCommand: npm install
     startCommand: npm start
     envVars:
-      # Public deployments default to mock mode - a shared free-tier Groq
-      # quota (1,000 requests/day for the default model) would otherwise be
-      # exhausted by enough visitors clicking around, breaking the demo for
-      # everyone including the owner. Flip to "false" once GROQ_API_KEY is
-      # set, if you want this specific deployment to run live analysis.
+      # Live by default - every visitor shares this deployment's GROQ_API_KEY,
+      # protected by the per-IP rate limiter in server/index.js (10 LLM
+      # requests/minute) rather than by defaulting to demo data. That limiter
+      # stops one IP from burning the whole quota in a burst; it does not cap
+      # total requests across many different visitors, so a shared free-tier
+      # quota (1,000 requests/day for the default model) can still run out
+      # under enough real traffic - set MOCK_MODE to "true" in the Render
+      # dashboard if that tradeoff isn't the one you want for a given deploy.
       - key: MOCK_MODE
-        value: "true"
+        value: "false"
       # Set in the Render dashboard (Environment tab) - never committed.
       - key: GROQ_API_KEY
         sync: false

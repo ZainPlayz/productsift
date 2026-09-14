@@ -1,6 +1,12 @@
 import Groq from "groq-sdk";
 import { z } from "zod";
 
+// Switched from Gemini to Groq: Groq's LPU inference is dramatically faster
+// (the actual complaint that motivated this switch - analysis runs were
+// regularly taking 60+ seconds under Gemini free-tier load).
+// Get a free key (no credit card) at https://console.groq.com/keys.
+export const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
 // Llama chat models were the original plan, but a live check against
 // groq.models.list() with a real key (not web search, which turned out to be
 // describing a lineup that's since changed) showed no Llama completion model
@@ -14,45 +20,15 @@ import { z } from "zod";
 // history - doesn't require a code change.
 export const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
-// v1.7: this app started with ONE shared server-side key, meaning every
-// visitor to a public deployment burned the deployer's own free-tier quota -
-// the whole reason MOCK_MODE defaults to true on Render (see render.yaml).
-// A visitor can now supply their OWN key instead (stored client-side only,
-// sent per-request on the X-Groq-Api-Key header - see routes and app.js).
-// The server's own key becomes optional: it's the fallback for someone
-// without their own key, not a requirement to run the app at all.
-const serverApiKey = process.env.GROQ_API_KEY || null;
-const serverGroq = serverApiKey ? new Groq({ apiKey: serverApiKey }) : null;
-
-// Governs ONLY what happens for a request that did NOT bring its own key -
-// MOCK_MODE exists to protect a shared SERVER key from public traffic, which
-// simply doesn't apply once a visitor is spending their own quota. A
-// visitor's key always means "call the real API for real", regardless of
-// this setting.
-export const SERVER_MOCK_MODE = process.env.MOCK_MODE === "true";
-
-// Called once per incoming request with whatever came in on the
-// X-Groq-Api-Key header (or null). Never logged, never persisted anywhere -
-// used only to build a client for the lifetime of this one request.
-export function resolveGroqRequest(userApiKey) {
-  if (userApiKey) {
-    return { mock: false, client: new Groq({ apiKey: userApiKey }) };
-  }
-  if (SERVER_MOCK_MODE || !serverGroq) {
-    return { mock: true, client: null };
-  }
-  return { mock: false, client: serverGroq };
-}
-
-// A 401 is now a routine, expected failure mode (anyone can paste a typo'd
-// or expired key), not just a deployer misconfiguration - worth a message
-// that actually says what to do about it, not just "request failed".
-export function friendlyGroqError(err) {
-  if (err.status === 401) {
-    return "Groq rejected the API key used for this request - check it's correct, or remove it (top right) to fall back to this server's default mode.";
-  }
-  return null;
-}
+// One shared server-side key for every visitor, protected by per-IP rate
+// limiting (server/index.js) rather than by gating real analysis behind a
+// per-visitor key. v1.7 briefly let visitors bring their own key instead;
+// reverted in favor of this simpler model - one key, rate limits as the
+// actual abuse guard. With no API key yet, MOCK_MODE lets every route return
+// realistic canned data instead of calling Groq, so the full pipeline can be
+// built and tested end-to-end without a key. Flip it off in .env once a key
+// is set.
+export const MOCK_MODE = process.env.MOCK_MODE === "true";
 
 // Groq's structured-output config wraps a JSON Schema in a response_format
 // envelope, not a Zod schema directly - Zod v4's built-in toJSONSchema() does
@@ -96,11 +72,11 @@ function isRetryableStatus(status) {
 // to invisible thinking, more goes to the JSON output this app depends on,
 // and it's faster too. Tightening max_completion_tokens without this first
 // was fighting the wrong variable.
-export async function createChatCompletionWithRetry(client, params, { retries = 3, baseDelayMs = 1000 } = {}) {
+export async function createChatCompletionWithRetry(params, { retries = 3, baseDelayMs = 1000 } = {}) {
   const requestParams = { max_completion_tokens: 2000, reasoning_effort: "low", ...params };
   for (let attempt = 0; ; attempt++) {
     try {
-      return await client.chat.completions.create(requestParams);
+      return await groq.chat.completions.create(requestParams);
     } catch (err) {
       if (!isRetryableStatus(err.status) || attempt >= retries) throw err;
       const delay = baseDelayMs * 2 ** attempt;

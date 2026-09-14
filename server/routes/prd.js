@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, createChatCompletionWithRetry, resolveGroqRequest, friendlyGroqError } from "../llmClient.js";
+import { MODEL, MOCK_MODE, createChatCompletionWithRetry } from "../llmClient.js";
 import { mockGeneratePRD } from "../mocks/fixtures.js";
 
 const router = Router();
@@ -76,15 +76,14 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Provide the top-ranked theme object in the 'theme' field." });
     }
 
-    const { mock, client } = resolveGroqRequest(req.get("X-Groq-Api-Key"));
-    if (mock) {
+    if (MOCK_MODE) {
       return res.json({ prd: mockGeneratePRD(theme) });
     }
 
     const decisionFraming = DECISION_FRAMING[theme.decision] || "";
     const systemPrompt = decisionFraming ? `${BASE_SYSTEM_PROMPT}\n\n${decisionFraming}` : BASE_SYSTEM_PROMPT;
 
-    const response = await createChatCompletionWithRetry(client, {
+    const response = await createChatCompletionWithRetry({
       model: MODEL,
       messages: [
         { role: "system", content: systemPrompt },
@@ -100,7 +99,7 @@ router.post("/", async (req, res) => {
     res.json({ prd });
   } catch (err) {
     console.error("prd error:", err);
-    res.status(err.status === 401 ? 401 : 500).json({ error: friendlyGroqError(err) || "Failed to generate PRD.", detail: err.message });
+    res.status(500).json({ error: "Failed to generate PRD.", detail: err.message });
   }
 });
 

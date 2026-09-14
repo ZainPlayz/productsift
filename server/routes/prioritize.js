@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MODEL, toGroqResponseFormat, createChatCompletionWithRetry, resolveGroqRequest, friendlyGroqError } from "../llmClient.js";
+import { MODEL, MOCK_MODE, toGroqResponseFormat, createChatCompletionWithRetry } from "../llmClient.js";
 import { PrioritizeResponseSchema } from "../schemas.js";
 import { mockPrioritizeThemes } from "../mocks/fixtures.js";
 
@@ -32,10 +32,9 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: `Too many themes (${themes.length}). Max is ${MAX_THEMES}.` });
     }
 
-    const { mock, client } = resolveGroqRequest(req.get("X-Groq-Api-Key"));
-    const estimates = mock
+    const estimates = MOCK_MODE
       ? mockPrioritizeThemes(themes)
-      : await prioritizeWithGroq(themes, client);
+      : await prioritizeWithGroq(themes);
 
     // Identity fields (theme/definition/frequency/severity/supporting_item_numbers/
     // example_quotes) always come from the original clustered theme, matched
@@ -66,11 +65,11 @@ router.post("/", async (req, res) => {
     res.json({ themes: scored });
   } catch (err) {
     console.error("prioritize error:", err);
-    res.status(err.status === 401 ? 401 : 500).json({ error: friendlyGroqError(err) || "Failed to prioritize themes.", detail: err.message });
+    res.status(500).json({ error: "Failed to prioritize themes.", detail: err.message });
   }
 });
 
-async function prioritizeWithGroq(themes, client) {
+async function prioritizeWithGroq(themes) {
   // Only what the model needs to estimate impact - theme objects also carry
   // supporting_item_numbers and per-item confidence (evidence-layer detail
   // from clustering) that would just be extra tokens here, on a free tier
@@ -82,7 +81,7 @@ async function prioritizeWithGroq(themes, client) {
     frequency: t.frequency,
   }));
 
-  const response = await createChatCompletionWithRetry(client, {
+  const response = await createChatCompletionWithRetry({
     model: MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
