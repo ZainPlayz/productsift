@@ -9,6 +9,7 @@ import prioritizeRouter from "./routes/prioritize.js";
 import prdRouter from "./routes/prd.js";
 import projectsRouter from "./routes/projects.js";
 import { DB_ENABLED } from "./db.js";
+import { SERVER_MOCK_MODE } from "./llmClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,7 +45,7 @@ const llmRateLimiter = rateLimit({
 });
 
 app.get("/api/status", (req, res) => {
-  res.json({ mockMode: process.env.MOCK_MODE === "true", sharingEnabled: DB_ENABLED });
+  res.json({ mockMode: SERVER_MOCK_MODE, sharingEnabled: DB_ENABLED });
 });
 
 // Lives at the project root (not public/) so it reads as bundled sample data,
@@ -79,7 +80,10 @@ app.get("/p/:id", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  const mock = process.env.MOCK_MODE === "true";
   console.log(`ProductSift running at http://localhost:${PORT}`);
-  console.log(mock ? "Mock mode: ON (no Groq API calls, no API key needed)" : "Mock mode: OFF (calling the live Groq API)");
+  console.log(
+    SERVER_MOCK_MODE
+      ? "Server default: mock mode ON (visitors without their own Groq key get canned data; a visitor's own key always runs live)"
+      : "Server default: mock mode OFF (calling the live Groq API with this server's key, unless a visitor supplies their own)",
+  );
 });

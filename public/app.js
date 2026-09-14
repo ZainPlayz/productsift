@@ -7,7 +7,18 @@ let rankedThemes = [];
 let feedbackItems = []; // numbered (1-based) split of the submitted feedback, from /api/cluster
 let lastPrdMarkdown = ""; // raw markdown of the most recently generated PRD, for "Copy PRD"
 let lastPrdTheme = null; // the theme that PRD was generated for, for the decision badge
-let isMockMode = false; // set from /api/status below - mock mode's canned response is the same regardless of input, so Analyze forces the bundled sample data instead of pretending arbitrary text drives it
+
+// --- BYOK (bring your own Groq key) ---
+// A visitor's own key means their requests run live under THEIR quota, not
+// this server's shared one - stored only in this browser (localStorage),
+// sent only as a request header, never written into shared/saved project
+// state (snapshotState() below never touches it).
+const GROQ_KEY_STORAGE = "groqApiKey";
+function getUserApiKey() {
+  return localStorage.getItem(GROQ_KEY_STORAGE) || "";
+}
+let serverMockMode = false; // raw server default from /api/status, untouched by whether this visitor has their own key
+let isMockMode = false; // effective: server mock mode AND no visitor key - Analyze forces the bundled sample data only in this case, since mock's canned response never reads the actual input
 
 // --- Sharing (persisted "living" project link, e.g. /p/abc123) ---
 let currentProjectId = null; // null until the first Share click, or until hydrated from a /p/:id link
@@ -56,6 +67,7 @@ const modeBanner = $("modeBanner");
 const themeToggle = $("themeToggle");
 const resetBtn = $("resetBtn");
 const shareBtn = $("shareBtn");
+const apiKeyBtn = $("apiKeyBtn");
 
 // --- Theme (light/dark) ---
 // The <head> script already applied any saved choice before first paint, to
@@ -122,10 +134,16 @@ function cycleStatus(messages, intervalMs = 2200) {
   return () => clearInterval(id);
 }
 
-async function postJSON(url, body) {
+// includeGroqKey defaults on since most POSTs here hit an LLM-calling route -
+// the one exception (saving a shared project) passes false explicitly so a
+// visitor's key never gets sent to a route that has no use for it.
+async function postJSON(url, body, includeGroqKey = true) {
+  const headers = { "Content-Type": "application/json" };
+  const groqKey = includeGroqKey ? getUserApiKey() : "";
+  if (groqKey) headers["X-Groq-Api-Key"] = groqKey;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -856,15 +874,54 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Recomputes everything that depends on "does THIS visitor have their own
+// Groq key" - called once at load (after /api/status resolves, so
+// serverMockMode is known) and again every time the API Key button changes
+// the stored key, so the effective mode never goes stale mid-session.
+function updateApiKeyUI() {
+  const hasKey = Boolean(getUserApiKey());
+  isMockMode = serverMockMode && !hasKey;
+  apiKeyBtn.textContent = hasKey ? "Using your key" : "API Key";
+  apiKeyBtn.title = hasKey
+    ? "You're using your own Groq API key, stored only in this browser. Click to change or remove it."
+    : "Use your own free Groq API key instead of this server's shared/demo key - get one at console.groq.com/keys.";
+  if (hasKey) {
+    modeBanner.hidden = true;
+  } else if (serverMockMode) {
+    modeBanner.hidden = false;
+    modeBanner.textContent = "Demo mode: showing sample results, not live Groq output. Analyze always runs on the bundled sample dataset here, regardless of what's in the box below. Use your own free Groq API key (top right) to run real analysis instead.";
+  } else {
+    modeBanner.hidden = true;
+  }
+}
+updateApiKeyUI();
+
+apiKeyBtn.addEventListener("click", () => {
+  const current = getUserApiKey();
+  const input = prompt(
+    current
+      ? "Update your Groq API key. Leave blank and confirm to remove it and use this server's default mode instead."
+      : "Enter your own free Groq API key (no credit card - console.groq.com/keys) so your analyses run under your own quota instead of this server's shared/demo key.",
+    current,
+  );
+  if (input === null) return; // cancelled
+  const trimmed = input.trim();
+  if (trimmed) {
+    localStorage.setItem(GROQ_KEY_STORAGE, trimmed);
+    setStatus("Using your own Groq API key for this browser - analyses now run live under your own quota.");
+  } else {
+    localStorage.removeItem(GROQ_KEY_STORAGE);
+    setStatus("Removed your Groq API key - back to this server's default mode.");
+  }
+  updateApiKeyUI();
+});
+
 (async function showModeBanner() {
   try {
     const res = await fetch("/api/status");
     const { mockMode, sharingEnabled } = await res.json();
-    isMockMode = mockMode;
-    if (mockMode) {
-      modeBanner.hidden = false;
-      modeBanner.textContent = "Demo mode: showing sample results, not live Groq output. Analyze always runs on the bundled sample dataset here, regardless of what's in the box below.";
-    }
+    serverMockMode = mockMode;
+    updateApiKeyUI();
     if (!sharingEnabled) {
       shareBtn.disabled = true;
       shareBtn.title = "Sharing isn't configured on this server (needs DATABASE_URL) - see the README.";
@@ -1067,7 +1124,7 @@ shareBtn.addEventListener("click", async () => {
   setLoading(shareBtn, true);
   try {
     if (!currentProjectId) {
-      const res = await postJSON("/api/projects", { data: snapshotState() });
+      const res = await postJSON("/api/projects", { data: snapshotState() }, false);
       currentProjectId = res.id;
       history.replaceState(null, "", `/p/${currentProjectId}`);
     } else {

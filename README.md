@@ -46,6 +46,20 @@ exportable artifact.**
    same link (roughly a second after the edit, debounced) so the next person to open it sees it
    too. Requires `DATABASE_URL` to be set (see [Setup](#setup)); without it the button just
    disables itself with an explanatory tooltip instead of breaking.
+8. **Bring your own Groq key** — click "API Key" (top right) to use your own free Groq key instead
+   of whatever this server is configured with. It's stored only in your browser (never saved to a
+   shared project, never sent anywhere but this app's own `/api/*` routes) and always means your
+   analyses run live, under your own quota, regardless of whether this deployment is in demo mode.
+
+## Whose API quota gets used?
+
+By default, one deployment = one shared server-side key = every visitor draws from the same quota,
+which is exactly why public deployments default to demo data (see **Deploy** below) - otherwise
+enough visitors clicking around exhausts the deployer's free tier and breaks the demo for everyone.
+Clicking **API Key** (top right) and pasting your own free Groq key fixes this per-visitor: your
+key is stored in `localStorage` (this browser only), sent as a request header on your own calls,
+and never written into a shared project's saved state - so two people can each use the same public
+link with their own keys and never touch each other's quota.
 
 ## Setup
 
@@ -58,11 +72,14 @@ By default `.env` has `MOCK_MODE=true`, so you can run the whole app immediately
 API key** — every step returns realistic templated data instead of calling Groq. This is
 how the pipeline was built and tested end-to-end.
 
-To get real, AI-generated clustering/scoring/PRD output:
+To get real, AI-generated clustering/scoring/PRD output, either:
 
-1. Get a **free** key (no credit card needed) at
-   [console.groq.com/keys](https://console.groq.com/keys).
-2. In `.env`, set `GROQ_API_KEY=...` and `MOCK_MODE=false`.
+- **Click "API Key"** in the running app and paste your own free key (get one, no credit card, at
+  [console.groq.com/keys](https://console.groq.com/keys)) - works immediately, no `.env` edit or
+  restart needed, and always runs live regardless of `MOCK_MODE` below. This is the only setup
+  step required for a visitor to a deployment that isn't yours; or
+- **Set the server's own key**: `GROQ_API_KEY=...` and `MOCK_MODE=false` in `.env`, used as the
+  fallback for any visitor who hasn't entered their own.
 
 To enable the **Share** button (optional):
 
@@ -106,9 +123,12 @@ steps to go live:
 
 **Public deployments default to `MOCK_MODE=true`** (set in `render.yaml`) — a shared free-tier
 Groq quota (1,000 requests/day for the default model) would otherwise be exhausted by enough
-visitors clicking around, breaking the demo for everyone including you. Flip it to `false` in
-the Render dashboard if you want a specific deployment to run real live analysis instead,
-understanding that tradeoff.
+visitors clicking around, breaking the demo for everyone including you. This used to be a real
+tradeoff (flip it to `false` and accept a shared-quota risk, or stay in demo mode for everyone);
+it mostly isn't anymore, since any visitor can click **API Key** and paste their own free key to
+get real live analysis under their own quota without touching yours at all. Flip `MOCK_MODE` to
+`false` in the Render dashboard only if you specifically want visitors *without* their own key to
+still get live analysis using your server's key.
 
 Any other Node host works too (Railway, Fly.io, etc.) — the app only needs `npm install` /
 `npm start`, a `PORT` env var (already read from `process.env.PORT`), and the vars above.
@@ -218,8 +238,13 @@ already changed once during this project's own development.
 
 ## Security & rate limiting
 
-- **The API key never reaches the browser.** It lives only in `.env`, read server-side by
-  `server/llmClient.js`. The frontend only ever talks to this app's own `/api/*` routes.
+- **This server's own API key never reaches the browser.** It lives only in `.env`, read
+  server-side by `server/llmClient.js`. The frontend only ever talks to this app's own `/api/*`
+  routes. A *visitor's own* key (the "API Key" button, v1.7) is different by design - it's
+  theirs, typed into their own browser, stored in that browser's `localStorage`, and sent only as
+  a request header to this app's own routes on this same origin - never logged server-side, never
+  written into a saved/shared project's state, and gone the moment they clear it or their browser
+  data.
 - **Per-IP rate limiting** (`express-rate-limit`, in `server/index.js`) caps the three
   LLM-calling routes (`/api/cluster`, `/api/prioritize`, `/api/prd`) at 10 requests/minute per
   IP. This protects a free-tier quota (or a paid bill) from a runaway client loop or casual
@@ -309,6 +334,22 @@ each stage tested before the next was built, per typical incremental PM/eng work
 mode (`MOCK_MODE=true`) let every stage be verified end-to-end — including the priority-score
 math and the UI — without needing an API key or spending anything on LLM calls during
 development.
+
+**Why a visitor can bring their own Groq key, and why it's resolved per-request instead of at
+server startup (v1.7).**
+The original design had exactly one Groq client, built once from `process.env.GROQ_API_KEY` when
+the server started - fine for local use, but it means every visitor to a public deployment shares
+one quota. `server/llmClient.js`'s `resolveGroqRequest(userApiKey)` now runs per-request: given
+whatever came in on a request's `X-Groq-Api-Key` header, it builds a fresh `Groq` client for that
+one request if present, or falls back to the server's own client/`MOCK_MODE` if not. Every LLM-
+calling route (`cluster.js`, `prioritize.js`, `prd.js`) reads the header and threads the resulting
+client through its call chain instead of importing a shared singleton - `cluster.js`'s three
+sequential calls (discover → classify → validate) all use the same per-request client. The key
+itself is never logged, never persisted server-side, and never included in a saved/shared project
+(`snapshotState()` in `app.js` doesn't touch `localStorage`) - it exists only for the lifetime of
+the request that carried it. A 401 (wrong or expired key) gets a message that says what to do
+about it (`friendlyGroqError()`), since "the request failed" isn't actionable when the key could
+belong to any visitor, not just the deployer who'd recognize their own mistake.
 
 **Why structured outputs (Zod schemas) instead of asking the model to "return JSON".**
 `server/schemas.js` defines the exact shape expected back from the clustering and
@@ -483,7 +524,7 @@ remember to re-share it.
 ```
 server/
   index.js              Express app: helmet, rate limiting, serves public/, mounts routes, serves /p/:id
-  llmClient.js            Groq client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
+  llmClient.js            Per-request Groq client resolution (server key or a visitor's own), MODEL, Zod-to-JSON-Schema helper
   schemas.js              Zod schemas shared by the cluster & prioritize routes
   feedbackItems.js         Splits raw feedback into the numbered items themes trace back to
   db.js                    Optional Neon/Postgres client - DB_ENABLED is false with no DATABASE_URL
