@@ -8,6 +8,11 @@ let feedbackItems = []; // numbered (1-based) split of the submitted feedback, f
 let lastPrdMarkdown = ""; // raw markdown of the most recently generated PRD, for "Copy PRD"
 let lastPrdTheme = null; // the theme that PRD was generated for, for the decision badge
 
+// --- Sharing (persisted "living" project link, e.g. /p/abc123) ---
+let currentProjectId = null; // null until the first Share click, or until hydrated from a /p/:id link
+let saveTimer = null;
+let hydrating = false; // true while restoreState() is applying a loaded project, so autosave doesn't immediately re-save what it just loaded
+
 const DECISIONS = ["Build", "Investigate", "Defer", "Reject"];
 
 // Shown as a tooltip on each decision button AND as a one-line hint under the
@@ -48,6 +53,7 @@ const statusBanner = $("statusBanner");
 const modeBanner = $("modeBanner");
 const themeToggle = $("themeToggle");
 const resetBtn = $("resetBtn");
+const shareBtn = $("shareBtn");
 
 // --- Theme (light/dark) ---
 // The <head> script already applied any saved choice before first paint, to
@@ -131,7 +137,7 @@ async function postJSON(url, body) {
 
 sampleBtn.addEventListener("click", async () => {
   try {
-    const res = await fetch("sample-feedback.txt");
+    const res = await fetch("/sample-feedback.txt");
     feedbackInput.value = await res.text();
     updateFeedbackCount();
   } catch (err) {
@@ -139,10 +145,101 @@ sampleBtn.addEventListener("click", async () => {
   }
 });
 
+// Real feedback almost never arrives as hand-typed lines - it arrives as a
+// CSV export from whatever tool collected it (App Store Connect, Play
+// Console, Zendesk, Intercom, a Google Form). Parse those properly instead
+// of dumping raw CSV syntax (commas, quoted fields) into the textarea.
+
+// Minimal RFC4180-ish parser: handles quoted fields containing commas,
+// newlines, and escaped `""` quotes - the actual shape real exports use,
+// which a naive split(",")/split("\n") breaks on.
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((cell) => cell.trim().length));
+}
+
+const LIKELY_TEXT_HEADERS = ["review", "comment", "comments", "feedback", "message", "body", "text", "description", "note", "notes", "content"];
+
+// Picks the column most likely to hold free-text feedback: an exact header
+// name match first (covers the common export tools), then falls back to
+// whichever column has the longest average cell length - IDs, ratings, and
+// dates are short and uniform, actual feedback text isn't.
+function pickTextColumn(rows) {
+  const header = rows[0];
+  const dataRows = rows.slice(1);
+  const byName = header.findIndex((h) => LIKELY_TEXT_HEADERS.includes(h.trim().toLowerCase()));
+  if (byName !== -1) return { index: byName, label: header[byName].trim(), dataRows };
+
+  let bestIndex = 0;
+  let bestAvgLen = -1;
+  for (let col = 0; col < header.length; col++) {
+    const lengths = dataRows.map((r) => (r[col] || "").length);
+    const avg = lengths.reduce((a, b) => a + b, 0) / (lengths.length || 1);
+    if (avg > bestAvgLen) {
+      bestAvgLen = avg;
+      bestIndex = col;
+    }
+  }
+  return { index: bestIndex, label: header[bestIndex]?.trim() || `column ${bestIndex + 1}`, dataRows };
+}
+
+function extractFeedbackFromCsv(text) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { lines: rows.flat().map((c) => c.trim()).filter(Boolean), column: null };
+  const { index, label, dataRows } = pickTextColumn(rows);
+  const lines = dataRows.map((r) => (r[index] || "").trim()).filter(Boolean);
+  return { lines, column: label };
+}
+
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
-  feedbackInput.value = await file.text();
+  const text = await file.text();
+
+  if (file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv") {
+    const { lines, column } = extractFeedbackFromCsv(text);
+    feedbackInput.value = lines.join("\n");
+    setStatus(
+      column
+        ? `Loaded ${lines.length} feedback item(s) from the "${column}" column of ${file.name}. Check the text below - edit it if the wrong column got picked.`
+        : `Loaded ${lines.length} feedback item(s) from ${file.name}.`,
+    );
+  } else {
+    feedbackInput.value = text;
+  }
   updateFeedbackCount();
 });
 
@@ -334,6 +431,7 @@ function renderThemes() {
   });
 
   renderUnclassifiedSection();
+  scheduleSave();
 }
 
 // A deliberately visible "these didn't fit anywhere" bucket - forcing every
@@ -494,6 +592,7 @@ function renderPriorityTable() {
   if (!summaryStage.hidden) {
     renderRoadmapSummary();
   }
+  scheduleSave();
 }
 
 const summaryBtn = $("summaryBtn");
@@ -679,6 +778,7 @@ function renderRoadmapSummary() {
 
     summaryList.appendChild(card);
   });
+  scheduleSave();
 }
 
 // --- Stage 5: PRD ---
@@ -706,6 +806,7 @@ async function generatePRDFor(theme, triggerBtn) {
     exportStage.hidden = false;
     prdStage.scrollIntoView({ behavior: "smooth", block: "start" });
     setStatus("PRD generated. Use the Export section below for a presentable copy.");
+    scheduleSave();
   } catch (err) {
     setStatus(err.message, true);
   } finally {
@@ -757,10 +858,14 @@ function escapeHtml(str) {
 (async function showModeBanner() {
   try {
     const res = await fetch("/api/status");
-    const { mockMode } = await res.json();
+    const { mockMode, sharingEnabled } = await res.json();
     if (mockMode) {
       modeBanner.hidden = false;
       modeBanner.textContent = "Demo mode: showing sample results, not live Groq output.";
+    }
+    if (!sharingEnabled) {
+      shareBtn.disabled = true;
+      shareBtn.title = "Sharing isn't configured on this server (needs DATABASE_URL) - see the README.";
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */
@@ -828,6 +933,9 @@ resetBtn.addEventListener("click", () => {
   feedbackItems = [];
   lastPrdMarkdown = "";
   lastPrdTheme = null;
+  currentProjectId = null; // detach from any shared link - starting over shouldn't overwrite it with an empty project
+  clearTimeout(saveTimer);
+  if (location.pathname !== "/") history.replaceState(null, "", "/");
 
   feedbackInput.value = "";
   fileInput.value = "";
@@ -850,3 +958,147 @@ resetBtn.addEventListener("click", () => {
   $("inputStage").scrollIntoView({ behavior: "smooth", block: "start" });
   feedbackInput.focus();
 });
+
+// --- Sharing ---
+
+// Everything needed to reconstruct the workspace on another machine. Decisions
+// live on the theme objects themselves (t.decision, set by the decision
+// buttons in renderRoadmapSummary), so they're already captured via
+// rankedThemes without a separate field.
+function snapshotState() {
+  return {
+    feedbackInputValue: feedbackInput.value,
+    clusteredThemes,
+    unclassifiedItems,
+    unclassifiedReasons,
+    rankedThemes,
+    feedbackItems,
+    lastPrdMarkdown,
+    lastPrdThemeId: lastPrdTheme ? lastPrdTheme.theme_id : null,
+    visibleStages: {
+      themes: !themesStage.hidden,
+      priority: !priorityStage.hidden,
+      summary: !summaryStage.hidden,
+      prd: !prdStage.hidden,
+      exportS: !exportStage.hidden,
+    },
+  };
+}
+
+// Rebuilds the whole workspace from a saved snapshot by re-running the same
+// render functions every other stage transition already uses, rather than
+// hand-writing a second copy of that rendering logic here.
+function restoreState(data) {
+  hydrating = true;
+
+  feedbackInput.value = data.feedbackInputValue || "";
+  updateFeedbackCount();
+
+  clusteredThemes = data.clusteredThemes || [];
+  unclassifiedItems = data.unclassifiedItems || [];
+  unclassifiedReasons = data.unclassifiedReasons || {};
+  rankedThemes = data.rankedThemes || [];
+  feedbackItems = data.feedbackItems || [];
+  lastPrdMarkdown = data.lastPrdMarkdown || "";
+  lastPrdTheme = data.lastPrdThemeId ? rankedThemes.find((t) => t.theme_id === data.lastPrdThemeId) : null;
+
+  const stages = data.visibleStages || {};
+
+  if (clusteredThemes.length) {
+    renderThemes();
+    themesStage.hidden = !stages.themes;
+  }
+  if (rankedThemes.length) {
+    renderPriorityTable();
+    priorityStage.hidden = !stages.priority;
+  }
+  if (stages.summary && rankedThemes.length) {
+    summaryStage.hidden = false;
+    renderRoadmapSummary();
+  }
+  if (stages.prd && lastPrdMarkdown) {
+    prdContent.innerHTML = marked.parse(lastPrdMarkdown);
+    if (lastPrdTheme?.decision) {
+      prdDecisionBadge.hidden = false;
+      prdDecisionBadge.textContent = `Decision: ${lastPrdTheme.decision}`;
+      prdDecisionBadge.className = `decision-badge decision-${lastPrdTheme.decision.toLowerCase()}`;
+    } else {
+      prdDecisionBadge.hidden = true;
+    }
+    prdStage.hidden = false;
+  }
+  exportStage.hidden = !stages.exportS;
+
+  hydrating = false;
+}
+
+async function saveNow() {
+  const res = await fetch(`/api/projects/${currentProjectId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: snapshotState() }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Autosave failed (${res.status})`);
+  }
+}
+
+// Called from every render function below once a project has a shareable
+// link, so edits (RICE overrides, reassignments, decisions, a new PRD) reach
+// anyone else with the link without the PM having to click Share again. A
+// failed background save is swallowed - the next edit's save will retry - so
+// a flaky connection doesn't interrupt anyone's work with an error popup.
+function scheduleSave() {
+  if (!currentProjectId || hydrating) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveNow().catch(() => {});
+  }, 800);
+}
+
+shareBtn.addEventListener("click", async () => {
+  if (!clusteredThemes.length) {
+    setStatus("Analyze some feedback first, then share the link.", true);
+    return;
+  }
+  setLoading(shareBtn, true);
+  try {
+    if (!currentProjectId) {
+      const res = await postJSON("/api/projects", { data: snapshotState() });
+      currentProjectId = res.id;
+      history.replaceState(null, "", `/p/${currentProjectId}`);
+    } else {
+      clearTimeout(saveTimer);
+      await saveNow();
+    }
+    await copyToClipboard(`${location.origin}/p/${currentProjectId}`, "Share link");
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    setLoading(shareBtn, false, "Share");
+  }
+});
+
+// Loading /p/abc123 directly (server routes it to this same index.html - see
+// server/index.js) hydrates the workspace from whatever was last saved there,
+// instead of starting from an empty Stage 1.
+(async function hydrateFromShareLink() {
+  const match = location.pathname.match(/^\/p\/([A-Za-z0-9_-]+)$/);
+  if (!match) return;
+  currentProjectId = match[1];
+  try {
+    const res = await fetch(`/api/projects/${currentProjectId}`);
+    const body = await res.json();
+    if (!res.ok) {
+      setStatus(body.error || "Could not load this shared project.", true);
+      currentProjectId = null;
+      return;
+    }
+    restoreState(body.data);
+    setStatus("Loaded shared project - your edits here save back to this same link.");
+  } catch (err) {
+    setStatus("Could not load this shared project.", true);
+    currentProjectId = null;
+  }
+})();

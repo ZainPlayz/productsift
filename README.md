@@ -10,7 +10,11 @@ exportable artifact.**
 
 ## What it does
 
-1. **Input** — paste raw feedback (app reviews, survey responses, support tickets) or upload a `.txt` file.
+1. **Input** — paste raw feedback, or upload a `.txt` file, or upload a `.csv` export straight from
+   App Store Connect, Play Console, Zendesk, Intercom, or a form tool. The CSV parser (real
+   RFC4180-style parsing — quoted fields, embedded commas/newlines — not a naive `split(",")`)
+   auto-picks the free-text column by header name first, then by longest average cell length, and
+   tells you which column it picked so you can sanity-check or just edit the result.
 2. **Synthesis** — three single-purpose LLM calls with a code-owned gate between them: discover
    themes with explicit definitions, classify each item's distilled primary issue against those
    definitions with a fit score, then a separate skeptical pass validates every classification
@@ -35,6 +39,12 @@ exportable artifact.**
    validated recommendation, not a commitment; a "Reject" PRD reads as a decision record).
 6. **Export** — Print/Save as PDF (the full pipeline, top to bottom, with decisions), Copy PRD,
    or Copy Roadmap Summary as plain text — a tangible output, not just a page you leave open.
+7. **Share** — click Share to get a persistent link (`/p/abc123`) backed by a real database, not
+   a snapshot. Anyone with the link sees the current state on load, and every edit anyone makes
+   after that — a reassignment, a RICE override, a decision, a new PRD — autosaves back to the
+   same link (roughly a second after the edit, debounced) so the next person to open it sees it
+   too. Requires `DATABASE_URL` to be set (see [Setup](#setup)); without it the button just
+   disables itself with an explanatory tooltip instead of breaking.
 
 ## Setup
 
@@ -52,6 +62,17 @@ To get real, AI-generated clustering/scoring/PRD output:
 1. Get a **free** key (no credit card needed) at
    [console.groq.com/keys](https://console.groq.com/keys).
 2. In `.env`, set `GROQ_API_KEY=...` and `MOCK_MODE=false`.
+
+To enable the **Share** button (optional):
+
+1. Create a free Postgres database at [neon.tech](https://neon.tech) (no credit card, and unlike
+   some free-tier databases it doesn't pause after a week of inactivity, which matters for a link
+   meant to stay live).
+2. Copy its connection string into `.env` as `DATABASE_URL=postgresql://...`.
+
+The `projects` table is created automatically on first use - no migration step. Leave
+`DATABASE_URL` unset and the rest of the app works exactly the same; only the Share button
+disables itself.
 
 Then run:
 
@@ -78,7 +99,8 @@ steps to go live:
 1. Click the button above (or **New +** → **Blueprint** on [Render](https://dashboard.render.com)
    and point it at this repo).
 2. When prompted, add `GROQ_API_KEY` as an environment variable (Render's blueprint flow asks
-   for any var marked `sync: false` — the key never gets committed to the repo).
+   for any var marked `sync: false` — the key never gets committed to the repo). Optionally add
+   `DATABASE_URL` too (a free Neon Postgres string) to enable the Share button on this deployment.
 3. Deploy. Render builds with `npm install` and starts with `npm start`.
 
 **Public deployments default to `MOCK_MODE=true`** (set in `render.yaml`) — a shared free-tier
@@ -88,7 +110,7 @@ the Render dashboard if you want a specific deployment to run real live analysis
 understanding that tradeoff.
 
 Any other Node host works too (Railway, Fly.io, etc.) — the app only needs `npm install` /
-`npm start`, a `PORT` env var (already read from `process.env.PORT`), and the two vars above.
+`npm start`, a `PORT` env var (already read from `process.env.PORT`), and the vars above.
 
 ## Why Groq instead of a paid API (and why it replaced Gemini)
 
@@ -429,22 +451,32 @@ Groq instead of a paid API** above for what that testing actually found, bugs an
 `adversarial-100.txt` specifically through the live pipeline - the full 100-item adversarial set,
 not just the sample data - remains the natural next verification step.
 
-**Why there's no database.**
-Scoped as a single-session demo (v1) — state lives in the browser's JS memory for the
-session. A next iteration would persist analyses so a PM could revisit or compare past runs.
+**Why the database is optional, not required.**
+The core analysis loop deliberately has zero persistence dependency — state lives in the
+browser's JS memory, and the app is fully usable with nothing but Node and a Groq key. Sharing
+(`/p/:id`) is a separate, additive layer on top: one `projects` table (`id`, `data jsonb`,
+timestamps) storing a full snapshot of that in-memory state, behind routes that no-op cleanly
+(`501`, button disabled) when `DATABASE_URL` isn't set. That's a deliberate boundary, not an
+oversight — a demo tool shouldn't *require* infrastructure just to run, but a "share this with my
+team" feature legitimately needs somewhere durable to write to, so it gets its own optional
+dependency instead of forcing one on everybody. Edits autosave (800ms debounced) rather than
+requiring an explicit "save" step, so a shared link stays current without the owner having to
+remember to re-share it.
 
 ## Project structure
 
 ```
 server/
-  index.js              Express app: helmet, rate limiting, serves public/, mounts the 3 routes
+  index.js              Express app: helmet, rate limiting, serves public/, mounts routes, serves /p/:id
   llmClient.js            Groq client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
   schemas.js              Zod schemas shared by the cluster & prioritize routes
   feedbackItems.js         Splits raw feedback into the numbered items themes trace back to
+  db.js                    Optional Neon/Postgres client - DB_ENABLED is false with no DATABASE_URL
   routes/
     cluster.js            POST /api/cluster    - 3-call pipeline (discover, classify, validate), evidence gated + built in code
     prioritize.js          POST /api/prioritize  - RICE scoring
     prd.js                  POST /api/prd         - PRD generation
+    projects.js             POST/GET/PUT /api/projects - save/load a shared project snapshot
   mocks/
     fixtures.js             MOCK_MODE canned/templated responses
 public/
@@ -466,5 +498,8 @@ adversarial-100.txt       100-item classification stress test (see v1.4 notes ab
   `GROQ_MODEL` in `.env` without a code change if a future model swap or deprecation is ever
   needed - which has now happened once already, going from the originally-planned Llama to this.
 - Zod v4, for schema-driven structured output (`z.toJSONSchema()`) and response validation
+- `@neondatabase/serverless` (optional - only used if `DATABASE_URL` is set), Neon's HTTP-based
+  Postgres driver - chosen over a normal TCP `pg` client because it works over plain `fetch()`,
+  which fits a free host like Render better than holding a persistent DB connection open
 - Plain HTML/CSS/JS frontend, no framework or build step (`marked.js` via CDN for rendering
   the PRD's Markdown)
