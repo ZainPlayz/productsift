@@ -50,6 +50,7 @@ const prdContent = $("prdContent");
 const prdDecisionBadge = $("prdDecisionBadge");
 const exportStage = $("exportStage");
 const printExportBtn = $("printExportBtn");
+const printReport = $("printReport");
 const copyPrdBtn = $("copyPrdBtn");
 const copySummaryBtn = $("copySummaryBtn");
 const statusBanner = $("statusBanner");
@@ -839,7 +840,126 @@ async function generatePRDFor(theme, triggerBtn) {
 
 // --- Stage 6: Export ---
 
-printExportBtn.addEventListener("click", () => window.print());
+// A plain Ctrl+P (or this button before this existed) just prints whatever's
+// on screen - the workspace UI, sidebar nav, RICE input boxes and decision
+// button groups included until .no-print hides a few of them. This instead
+// builds a purpose-built report (cover, roadmap summary with decisions, the
+// full priority table, the PRD) into a hidden container and prints ONLY
+// that - genuinely different output than pressing Ctrl+P yourself, not the
+// same page with a few more rules toggled.
+printExportBtn.addEventListener("click", () => {
+  printReport.innerHTML = buildPrintReportHtml();
+  document.body.classList.add("print-report-mode");
+  window.print();
+});
+
+// Fires once the print dialog closes, whether or not the user actually
+// printed - restores the normal workspace view either way. Supported in
+// every browser this app targets (Chrome, Firefox, Edge, Safari).
+window.addEventListener("afterprint", () => {
+  document.body.classList.remove("print-report-mode");
+});
+
+function reportDecisionBadgeHtml(decision) {
+  if (!decision) return `<span class="decision-badge">Not yet decided</span>`;
+  return `<span class="decision-badge decision-${decision.toLowerCase()}">${escapeHtml(decision)}</span>`;
+}
+
+// Rebuilt fresh on every click from the same state the on-screen workspace
+// already uses (rankedThemes, lastPrdMarkdown, decisions) - not a second
+// source of truth, just a different, print-only presentation of it.
+function buildPrintReportHtml() {
+  const generated = new Date().toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" });
+  const themeCount = clusteredThemes.length;
+  const itemCount = feedbackItems.length;
+
+  let html = `
+    <header class="print-report-header">
+      <div class="print-report-brand"><span class="brand-mark" aria-hidden="true">&#8599;</span> ProductSift</div>
+      <h1>Feedback Roadmap Report</h1>
+      <p class="print-report-meta">Generated ${escapeHtml(generated)} &middot; ${itemCount} feedback item${itemCount === 1 ? "" : "s"} analyzed &middot; ${themeCount} theme${themeCount === 1 ? "" : "s"} identified</p>
+    </header>
+  `;
+
+  if (rankedThemes.length) {
+    html += `<section class="print-report-section"><h2>Roadmap Summary</h2>`;
+    rankedThemes.slice(0, 3).forEach((t, i) => {
+      html += `
+        <div class="print-report-summary-item">
+          <div class="print-report-summary-heading">
+            <span class="print-report-rank">${i + 1}</span>
+            <h3>${escapeHtml(t.theme)}</h3>
+          </div>
+          <p class="summary-meta">${t.frequency} feedback item${t.frequency === 1 ? "" : "s"} &bull; Severity ${t.severity}/5 &bull; Priority ${t.priority_score}</p>
+          <p>${escapeHtml(t.definition)}</p>
+      `;
+      if (i === 0) {
+        const explanation = computeRankingExplanation(t);
+        const sensitivity = computeSensitivity(t, rankedThemes[1]);
+        html += `
+          <div class="why-panel">
+            <strong>Why this is #1</strong>
+            <p>${escapeHtml(explanation.sentence)}</p>
+          </div>
+        `;
+        if (sensitivity && sensitivity.lines.length) {
+          html += `
+            <div class="sensitivity-panel">
+              <strong>Decision sensitivity</strong>
+              <p>This ranking holds unless, relative to "${escapeHtml(sensitivity.comparedTo)}" (#2):</p>
+              <ul>${sensitivity.lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>
+            </div>
+          `;
+        }
+      }
+      html += `<p class="decision-label">Decision</p>${reportDecisionBadgeHtml(t.decision)}`;
+      html += `</div>`;
+    });
+    html += `</section>`;
+
+    html += `
+      <section class="print-report-section">
+        <h2>Full Prioritized List</h2>
+        <table class="print-report-table">
+          <thead>
+            <tr><th>#</th><th>Theme</th><th>Frequency</th><th>Severity</th><th>Impact</th><th>Priority</th><th>Decision</th></tr>
+          </thead>
+          <tbody>
+            ${rankedThemes
+              .map(
+                (t, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${escapeHtml(t.theme)}</td>
+                <td>${t.frequency}</td>
+                <td>${t.severity}/5</td>
+                <td>${t.impact}/5</td>
+                <td>${t.priority_score}</td>
+                <td>${t.decision ? escapeHtml(t.decision) : "—"}</td>
+              </tr>
+            `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </section>
+    `;
+  }
+
+  if (lastPrdMarkdown) {
+    html += `
+      <section class="print-report-section print-report-prd">
+        <h2>Draft PRD${lastPrdTheme ? `: ${escapeHtml(lastPrdTheme.theme)}` : ""}</h2>
+        ${lastPrdTheme?.decision ? reportDecisionBadgeHtml(lastPrdTheme.decision) : ""}
+        <div class="prd-doc">${marked.parse(lastPrdMarkdown)}</div>
+      </section>
+    `;
+  }
+
+  html += `<footer class="print-report-footer">Generated by ProductSift</footer>`;
+
+  return html;
+}
 
 async function copyToClipboard(text, label) {
   try {

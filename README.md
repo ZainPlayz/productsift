@@ -44,8 +44,11 @@ something that fires on its own** below.
    proposed solution, scope (in/out), background, user stories, success metrics, and open
    questions. The PRD's framing adapts to the PM's decision (an "Investigate" PRD reads as a
    validated recommendation, not a commitment; a "Reject" PRD reads as a decision record).
-6. **Export** — Print/Save as PDF (the full pipeline, top to bottom, with decisions), Copy PRD,
-   or Copy Roadmap Summary as plain text — a tangible output, not just a page you leave open.
+6. **Export** — Print/Save as PDF builds a purpose-made report (cover page, roadmap summary with
+   decisions, the full priority table, the PRD) rather than printing the workspace UI itself —
+   genuinely different output than pressing Ctrl+P yourself, not the same page with a stylesheet
+   swapped in. See **Why the print report is built, not just styled** below. Copy PRD and Copy
+   Roadmap Summary give the same content as plain text, for pasting into Slack/email/docs.
 7. **Share** — click Share to get a persistent link (`/p/abc123`) backed by a real database, not
    a snapshot. Anyone with the link sees the current state on load, and every edit anyone makes
    after that — a reassignment, a priority override, a decision, a new PRD — autosaves back to the
@@ -418,8 +421,28 @@ Ctrl+P" isn't the same as an intentional export action. The Export section makes
 Print/PDF, Copy PRD (raw Markdown, decision appended), Copy Roadmap Summary (plain text) - and a
 few small print-specific rules were needed to make the printed artifact match what a PM would
 actually want to hand someone: theme cards' supporting-feedback lists print in full even if never
-expanded on screen, and each decision `<select>` swaps for its selected value as plain text
-(a dropdown control doesn't mean anything on paper).
+expanded on screen, and each decision control swaps for its selected value as plain text (a button
+group doesn't mean anything on paper).
+
+**Why the print report is built, not just styled (v1.8).**
+Through v1.7, "Print / Save as PDF" was `window.print()` and nothing else - identical to a visitor
+pressing Ctrl+P themselves, because both trigger the exact same `@media print` CSS regardless of
+which one fires it. Styling alone can't make a button meaningfully different from the shortcut it
+wraps; only doing something *else* first can. `buildPrintReportHtml()` in `app.js` now composes a
+purpose-built report - cover (title, generation date, item/theme counts), a Roadmap Summary section
+reusing the same `computeRankingExplanation()`/`computeSensitivity()` logic the on-screen summary
+uses (one source of truth, not a second copy), the full priority table, and the PRD - into a
+hidden `#printReport` container, sets a `print-report-mode` class on `<body>`, then calls
+`window.print()`. The print stylesheet hides the entire app shell and shows only that container
+when the class is present; a plain Ctrl+P (class never set) still prints the workspace as it looks
+on screen, same as before - this only changes what the *button* does, not what printing itself
+means. `afterprint` restores normal browsing once the dialog closes either way. Two things had to
+be fixed to make the result actually look intentional rather than merely different: Chrome strips
+background colors on print by default, which would have flattened every severity/decision badge to
+an unstyled box (fixed with `print-color-adjust: exact`); and the page's `position: fixed`
+accessibility skip-link - never visible on screen, `top: -80px` until focused - showed up overlaid
+across the printed content, since `position: fixed` has no real meaning once content is paginated
+(fixed with `.no-print` on that one element, a real bug this surfaced, not a hypothetical one).
 
 **How the clustering architecture evolved - v1.1 → v1.3 → v1.4.** This is the single biggest
 change in the project's history and worth walking through as a sequence, not just a final state:

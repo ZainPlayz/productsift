@@ -768,11 +768,23 @@ table { font-size: 14px; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 
+/* Always hidden on screen - only ever shown by print-report-mode below,
+   itself only ever set right before window.print() (see app.js). Its base
+   display:none makes this safe to include on the page unconditionally. */
+.print-report { display: none; }
+
+@page { margin: 1.6cm; }
+
 @media print {
   /* Printing should never capture a mid-transition frame between the
      on-screen theme and print's forced-light colors below. */
   * { transition: none !important; }
   .no-print { display: none !important; }
+  /* Chrome strips background colors on print by default unless the user
+     manually enables "background graphics" - without this, every severity
+     badge, decision pill, and the brand mark's dark fill would print as a
+     flat unstyled box regardless of how carefully the colors are chosen. */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* Print always renders in light mode regardless of the on-screen theme -
      dark backgrounds waste ink and most printers/PDF viewers render dark
      body colors poorly, so every themed variable is pinned back to its
@@ -809,6 +821,92 @@ table { font-size: 14px; }
   .evidence-print-only { display: inline; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
   .evidence-list.hidden { display: block !important; } /* print full evidence even if collapsed on screen */
   .evidence-item.flagged { background: none; }
+
+  /* --- print-report-mode: the "Print / Save as PDF" button's own report,
+     not the workspace UI. Hides the entire app shell and shows only the
+     purpose-built report built by buildPrintReportHtml() in app.js. A plain
+     Ctrl+P (this class never set) still prints the workspace as above. --- */
+  body.print-report-mode .app-header,
+  body.print-report-mode .workspace-shell {
+    display: none !important;
+  }
+  body.print-report-mode .print-report {
+    display: block;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+  }
+
+  .print-report-header {
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+    border-bottom: 2px solid var(--text);
+  }
+  .print-report-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .print-report-brand .brand-mark { width: 22px; height: 22px; font-size: 15px; margin-right: 0; }
+  .print-report-header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.02em; }
+  .print-report-meta { margin: 0; font-size: 12px; color: var(--text-muted); }
+
+  .print-report-section { margin: 26px 0; break-inside: avoid-page; }
+  .print-report-section h2 {
+    font-size: 16px;
+    margin: 0 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .print-report-summary-item {
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--subtle-bg);
+    break-inside: avoid;
+  }
+  .print-report-summary-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .print-report-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--text);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .print-report-summary-heading h3 { margin: 0; font-size: 15px; }
+  .print-report-summary-item .summary-meta { margin: 0 0 8px; }
+  .print-report-summary-item .why-panel,
+  .print-report-summary-item .sensitivity-panel { margin: 10px 0; break-inside: avoid; }
+  .print-report-summary-item .decision-label { margin: 10px 0 4px; }
+
+  .print-report-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .print-report-table th, .print-report-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  .print-report-table th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.02em; }
+  .print-report-table tr { break-inside: avoid; }
+
+  .print-report-prd { break-before: page; }
+  .print-report-prd .decision-badge { margin-top: 4px; }
+  .print-report-prd .prd-doc { border: none; padding: 0; background: none; }
+
+  .print-report-footer {
+    margin-top: 36px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+  }
 }
 
 @media (max-width: 520px) {

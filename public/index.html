@@ -9,7 +9,7 @@
   <script src="/theme-init.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#inputStage">Skip to workspace</a>
+  <a class="skip-link no-print" href="#inputStage">Skip to workspace</a>
   <header class="app-header no-print">
     <a class="brand" href="#inputStage"><span class="brand-mark" aria-hidden="true">↗</span> Product<span class="brand-light">Sift</span></a>
     <div class="header-actions">
@@ -109,6 +109,14 @@
     </section>
   </main>
   </div>
+
+  <!-- Populated by printExportBtn's click handler just before window.print() -
+       a purpose-built report, not a screenshot of the workspace UI. Hidden on
+       screen; shown only in print (see .print-report-mode in style.css), so a
+       plain Ctrl+P without clicking the button still prints the workspace as
+       it looks on screen, same as before. A sibling of .workspace-shell (not
+       nested inside it) so print mode can hide that whole subtree at once. -->
+  <div id="printReport" class="print-report" aria-hidden="true"></div>
 
   <script src="/app.js"></script>
 </body>
