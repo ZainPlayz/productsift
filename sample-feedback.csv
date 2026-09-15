@@ -1,0 +1,23 @@
+Review ID,Rating,Review Title,Review Text,Date,App Version,Territory
+R10231,2,So slow,"It takes forever to load my tasks every morning, so slow.",2026-01-04,4.2.1,US
+R10232,2,Loading time,Loading time is brutal when I first open the app.,2026-01-04,4.2.1,GB
+R10233,2,Sluggish dashboard,"Dashboard is sluggish, especially first thing in the morning.",2026-01-05,4.2.1,US
+R10234,2,Used to be snappy,The app used to be snappy but now it lags every time I switch projects.,2026-01-06,4.2.0,CA
+R10235,1,Notification overload,"I get a push every time someone edits a checkbox, so I muted the whole app.",2026-01-07,4.2.1,US
+R10236,2,Too many alerts,"Too many notifications, I honestly can't tell what's actually important anymore.",2026-01-07,4.2.1,AU
+R10237,3,Mentions only please,Wish I could only get notified for @mentions instead of every single change.,2026-01-08,4.2.1,US
+R10238,2,No per-project mute,There's no way to turn off notifications for just one project specifically.,2026-01-09,4.2.0,GB
+R10239,1,Billing nightmare,"Got charged for the team plan but I'm the only user, no idea why.",2026-01-10,4.2.1,US
+R10240,1,Overcharged twice,Support took a week to explain why I was billed twice in one month.,2026-01-10,4.2.1,DE
+R10241,1,Still charged after cancel,"Cancelled my subscription but still got charged the next month, very frustrating.",2026-01-11,4.2.1,US
+R10242,2,Confusing invoice,The billing page is confusing and I can't tell what exactly I'm paying for.,2026-01-11,4.2.0,CA
+R10243,3,Please add calendar sync,Would love if my deadlines just showed up in Google Calendar automatically.,2026-01-12,4.2.1,US
+R10244,3,Outlook sync missing,"Every other tool I use syncs with Outlook, this one doesn't and it's annoying.",2026-01-13,4.2.1,GB
+R10245,2,Dealbreaker for my team,No calendar integration is honestly a dealbreaker for our whole workflow.,2026-01-13,4.2.0,US
+R10246,2,Can't find old tasks,Searched for a task I know I made months ago and got absolutely nothing back.,2026-01-14,4.2.1,AU
+R10247,2,Archive search broken,Archive search feels broken, or maybe it just doesn't exist at all.,2026-01-15,4.2.1,US
+R10248,3,Confusing permissions,Took way too long to figure out how to give a teammate view-only access.,2026-01-15,4.2.0,GB
+R10249,3,Permissions scattered,Permissions settings are spread across three completely different menus.,2026-01-16,4.2.1,US
+R10250,1,Crashes on notifications,The mobile app crashes every single time I try to open a notification.,2026-01-16,4.2.1,US
+R10251,2,Buttons cut off,"On my phone, half the buttons are unreachable without scrolling sideways.",2026-01-17,4.2.0,CA
+R10252,3,Needs dark mode,I wish there was a dark mode, using this app at night is way too bright.,2026-01-18,4.2.1,GB

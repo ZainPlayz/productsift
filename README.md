@@ -576,7 +576,9 @@ server/
     fixtures.js             MOCK_MODE canned/templated responses
 public/
   index.html, style.css, app.js   Static frontend, no build step
-sample-feedback.txt       Bundled 52-item sample dataset for an instant demo
+sample-feedback.txt       Bundled 52-item sample dataset - "Analyze Feedback" after pasting/uploading it, or the CSV version below
+sample-feedback.csv       The same content as an App Store Connect-style review export (Review ID/Rating/Title/Review Text/Date/Version/Territory columns) - for trying the CSV upload path specifically
+demo-feedback.txt         Smaller 9-item dataset "Try a Demo" uses - a live analysis of the full 52-item file measured 100+ seconds, too slow for a one-click demo (see below)
 adversarial-100.txt       100-item classification stress test (see v1.4 notes above)
 ```
 
