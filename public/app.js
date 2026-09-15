@@ -10,10 +10,18 @@ let lastPrdTheme = null; // the theme that PRD was generated for, for the decisi
 
 let isMockMode = false; // set from /api/status below - mock mode's canned response is the same regardless of input, so Analyze forces the bundled sample data instead of pretending arbitrary text drives it
 
-// --- Sharing (persisted "living" project link, e.g. /p/abc123) ---
-let currentProjectId = null; // null until the first Share click, or until hydrated from a /p/:id link
+// --- Auth & collaboration (orgs, projects, attributed feedback drops) ---
+let currentUser = null; // {id, email, name} | null - refreshed via fetchMe()
+let currentOrgs = []; // orgs the logged-in user belongs to, with their role in each
+let currentOrgId = null;
+let currentOrgRole = null; // 'owner' | 'member' in currentOrgId
+let currentProjects = []; // projects listed for currentOrgId
+let openProjectId = null; // the project currently loaded into the workspace below, if any
+let openProjectName = "";
+let openProjectDrops = []; // drops for openProjectId, oldest-first - drives the drop-history panel and evidence attribution
+let itemNumberToDrop = {}; // item number (1-based, from the last Analyze) -> {userName, createdAt}, built from openProjectDrops
 let saveTimer = null;
-let hydrating = false; // true while restoreState() is applying a loaded project, so autosave doesn't immediately re-save what it just loaded
+let hydrating = false; // true while restoreState() is applying a loaded analysis, so autosave doesn't immediately re-save what it just loaded
 
 const DECISIONS = ["Build", "Investigate", "Defer", "Reject"];
 
@@ -57,7 +65,41 @@ const statusBanner = $("statusBanner");
 const modeBanner = $("modeBanner");
 const themeToggle = $("themeToggle");
 const resetBtn = $("resetBtn");
-const shareBtn = $("shareBtn");
+
+const authStatus = $("authStatus");
+const loginBtn = $("loginBtn");
+const orgsBtn = $("orgsBtn");
+const logoutBtn = $("logoutBtn");
+const authView = $("authView");
+const authViewTitle = $("authViewTitle");
+const authViewError = $("authViewError");
+const authForm = $("authForm");
+const authNameField = $("authNameField");
+const authName = $("authName");
+const authEmail = $("authEmail");
+const authPassword = $("authPassword");
+const authSubmitBtn = $("authSubmitBtn");
+const authToggleModeBtn = $("authToggleModeBtn");
+const authCancelBtn = $("authCancelBtn");
+const orgShellView = $("orgShellView");
+const orgList = $("orgList");
+const newOrgName = $("newOrgName");
+const createOrgBtn = $("createOrgBtn");
+const projectListView = $("projectListView");
+const backToOrgsBtn = $("backToOrgsBtn");
+const projectListTitle = $("projectListTitle");
+const membersPanel = $("membersPanel");
+const projectList = $("projectList");
+const newProjectName = $("newProjectName");
+const createProjectBtn = $("createProjectBtn");
+const workspaceShell = $("workspaceShell");
+const projectContext = $("projectContext");
+const projectContextName = $("projectContextName");
+const leaveProjectBtn = $("leaveProjectBtn");
+const inputStageTitle = $("inputStageTitle");
+const inputStageHint = $("inputStageHint");
+const dropHistory = $("dropHistory");
+const addDropBtn = $("addDropBtn");
 
 // --- Theme (light/dark) ---
 // The <head> script already applied any saved choice before first paint, to
@@ -136,6 +178,393 @@ async function postJSON(url, body) {
   }
   return data;
 }
+
+// --- Auth & collaboration ---
+
+// Four top-level views live as siblings in index.html: the workspace (the
+// anonymous flow, unchanged, shown by default) and three logged-in views
+// (auth form, org picker, project list). Exactly one is visible at a time.
+function showWorkspace() {
+  authView.hidden = true;
+  orgShellView.hidden = true;
+  projectListView.hidden = true;
+  workspaceShell.hidden = false;
+}
+function showAuthView() {
+  workspaceShell.hidden = true;
+  orgShellView.hidden = true;
+  projectListView.hidden = true;
+  authView.hidden = false;
+}
+function showOrgShellView() {
+  workspaceShell.hidden = true;
+  authView.hidden = true;
+  projectListView.hidden = true;
+  orgShellView.hidden = false;
+}
+function showProjectListView() {
+  workspaceShell.hidden = true;
+  authView.hidden = true;
+  orgShellView.hidden = true;
+  projectListView.hidden = false;
+}
+
+async function fetchMe() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (!res.ok) {
+      currentUser = null;
+    } else {
+      const body = await res.json();
+      currentUser = body.user || null;
+    }
+  } catch (_) {
+    currentUser = null;
+  }
+  renderAuthState();
+}
+
+function renderAuthState() {
+  if (currentUser) {
+    authStatus.hidden = false;
+    authStatus.textContent = currentUser.name;
+    loginBtn.hidden = true;
+    orgsBtn.hidden = false;
+    logoutBtn.hidden = false;
+  } else {
+    authStatus.hidden = true;
+    loginBtn.hidden = false;
+    orgsBtn.hidden = true;
+    logoutBtn.hidden = true;
+  }
+}
+
+let authMode = "login";
+function setAuthMode(mode) {
+  authMode = mode;
+  authViewError.hidden = true;
+  authForm.reset();
+  authViewTitle.textContent = mode === "login" ? "Log in" : "Sign up";
+  authNameField.hidden = mode !== "signup";
+  authName.required = mode === "signup";
+  authPassword.autocomplete = mode === "login" ? "current-password" : "new-password";
+  authSubmitBtn.textContent = mode === "login" ? "Log in" : "Sign up";
+  authToggleModeBtn.textContent = mode === "login" ? "Need an account? Sign up" : "Already have an account? Log in";
+}
+
+loginBtn.addEventListener("click", () => {
+  setAuthMode("login");
+  showAuthView();
+});
+
+authToggleModeBtn.addEventListener("click", () => setAuthMode(authMode === "login" ? "signup" : "login"));
+
+authCancelBtn.addEventListener("click", () => {
+  authForm.reset();
+  showWorkspace();
+});
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const endpoint = authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
+  const payload =
+    authMode === "login"
+      ? { email: authEmail.value.trim(), password: authPassword.value }
+      : { email: authEmail.value.trim(), password: authPassword.value, name: authName.value.trim() };
+  authSubmitBtn.disabled = true;
+  authViewError.hidden = true;
+  try {
+    const data = await postJSON(endpoint, payload);
+    currentUser = data.user;
+    renderAuthState();
+    authForm.reset();
+    await loadOrgs();
+    showOrgShellView();
+  } catch (err) {
+    authViewError.hidden = false;
+    authViewError.textContent = err.message;
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await postJSON("/api/auth/logout", {});
+  } catch (_) {
+    /* cookie may already be gone - still reset local state below */
+  }
+  currentUser = null;
+  currentOrgId = null;
+  currentOrgRole = null;
+  resetWorkspaceState();
+  renderProjectContext();
+  renderAuthState();
+  showWorkspace();
+});
+
+orgsBtn.addEventListener("click", async () => {
+  await loadOrgs();
+  showOrgShellView();
+});
+
+async function loadOrgs() {
+  try {
+    const res = await fetch("/api/orgs");
+    const data = await res.json();
+    currentOrgs = data.orgs || [];
+    renderOrgList();
+  } catch (err) {
+    setStatus("Could not load organizations.", true);
+  }
+}
+
+function renderOrgList() {
+  orgList.innerHTML = "";
+  if (!currentOrgs.length) {
+    orgList.innerHTML = `<p class="hint">No organizations yet - create one below to start dropping feedback with a team.</p>`;
+    return;
+  }
+  currentOrgs.forEach((org) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "list-item";
+    item.innerHTML = `<strong>${escapeHtml(org.name)}</strong><span class="list-item-meta">${escapeHtml(org.role)}</span>`;
+    item.addEventListener("click", () => selectOrg(org.id, org.name, org.role));
+    orgList.appendChild(item);
+  });
+}
+
+createOrgBtn.addEventListener("click", async () => {
+  const name = newOrgName.value.trim();
+  if (!name) {
+    setStatus("Enter an organization name.", true);
+    return;
+  }
+  createOrgBtn.disabled = true;
+  try {
+    await postJSON("/api/orgs", { name });
+    newOrgName.value = "";
+    await loadOrgs();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    createOrgBtn.disabled = false;
+  }
+});
+
+async function selectOrg(orgId, orgName, role) {
+  currentOrgId = orgId;
+  currentOrgRole = role;
+  projectListTitle.textContent = `${orgName} — Projects`;
+  membersPanel.innerHTML = "";
+  await loadProjects();
+  if (role === "owner") await renderMembersPanel();
+  showProjectListView();
+}
+
+backToOrgsBtn.addEventListener("click", () => showOrgShellView());
+
+async function renderMembersPanel() {
+  try {
+    const res = await fetch(`/api/orgs/${currentOrgId}/members`);
+    const data = await res.json();
+    const members = data.members || [];
+    membersPanel.innerHTML = `
+      <h3>Members</h3>
+      <ul class="member-list">
+        ${members.map((m) => `<li>${escapeHtml(m.name)}<span class="member-meta">${escapeHtml(m.email)} &middot; ${escapeHtml(m.role)}</span></li>`).join("")}
+      </ul>
+      <div class="controls-row no-print">
+        <input type="email" id="newMemberEmail" placeholder="Add member by email (must already have an account)" />
+        <button type="button" id="addMemberBtn" class="btn btn-secondary">Add</button>
+      </div>
+    `;
+    $("addMemberBtn").addEventListener("click", async () => {
+      const email = $("newMemberEmail").value.trim();
+      if (!email) return;
+      try {
+        await postJSON(`/api/orgs/${currentOrgId}/members`, { email });
+        await renderMembersPanel();
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    });
+  } catch (err) {
+    membersPanel.innerHTML = "";
+  }
+}
+
+async function loadProjects() {
+  try {
+    const res = await fetch(`/api/orgs/${currentOrgId}/projects`);
+    const data = await res.json();
+    currentProjects = data.projects || [];
+    renderProjectList();
+  } catch (err) {
+    setStatus("Could not load projects.", true);
+  }
+}
+
+function renderProjectList() {
+  projectList.innerHTML = "";
+  if (!currentProjects.length) {
+    projectList.innerHTML = `<p class="hint">No projects yet - create one below.</p>`;
+    return;
+  }
+  currentProjects.forEach((p) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "list-item";
+    const lastAnalyzed = p.lastAnalysisAt ? new Date(p.lastAnalysisAt).toLocaleString() : "not analyzed yet";
+    item.innerHTML = `<strong>${escapeHtml(p.name)}</strong><span class="list-item-meta">${p.dropCount} drop${p.dropCount === 1 ? "" : "s"} &middot; ${escapeHtml(lastAnalyzed)}</span>`;
+    item.addEventListener("click", () => openProject(p.id));
+    projectList.appendChild(item);
+  });
+}
+
+createProjectBtn.addEventListener("click", async () => {
+  const name = newProjectName.value.trim();
+  if (!name) {
+    setStatus("Enter a project name.", true);
+    return;
+  }
+  createProjectBtn.disabled = true;
+  try {
+    await postJSON(`/api/orgs/${currentOrgId}/projects`, { name });
+    newProjectName.value = "";
+    await loadProjects();
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    createProjectBtn.disabled = false;
+  }
+});
+
+// Recomputes which teammate/timestamp each 1-based item number (as assigned
+// by the last Analyze, via /api/cluster's numbering of the concatenated
+// feedback) traces back to - drops are concatenated server-side oldest-first
+// in the same order openProjectDrops lists them, so a running count over
+// each drop's itemCount lines up exactly.
+function computeItemNumberToDrop() {
+  itemNumberToDrop = {};
+  let n = 0;
+  openProjectDrops.forEach((d) => {
+    for (let i = 0; i < d.itemCount; i++) {
+      n++;
+      itemNumberToDrop[n] = { userName: d.userName, createdAt: d.createdAt };
+    }
+  });
+}
+
+function renderProjectContext() {
+  if (openProjectId) {
+    projectContext.hidden = false;
+    projectContextName.textContent = openProjectName;
+    inputStageTitle.textContent = `Feedback Input — ${openProjectName}`;
+    inputStageHint.textContent = "Paste feedback and click \"Add to Project\" to drop it in for the team - or just click Analyze to run the full pipeline across everything dropped so far.";
+    addDropBtn.hidden = false;
+  } else {
+    projectContext.hidden = true;
+    inputStageTitle.textContent = "Feedback Input";
+    inputStageHint.textContent = "Paste raw feedback (one item per line), or upload a .csv export from App Store Connect, Play Console, Zendesk, Intercom, or a form tool.";
+    addDropBtn.hidden = true;
+    dropHistory.hidden = true;
+    dropHistory.innerHTML = "";
+  }
+}
+
+function renderDropHistory() {
+  if (!openProjectId || !openProjectDrops.length) {
+    dropHistory.hidden = true;
+    dropHistory.innerHTML = "";
+    return;
+  }
+  dropHistory.hidden = false;
+  dropHistory.innerHTML = `
+    <h3>Drop history</h3>
+    <ul>
+      ${openProjectDrops
+        .map((d) => `<li>${escapeHtml(d.userName)} dropped ${d.itemCount} item${d.itemCount === 1 ? "" : "s"} &middot; ${escapeHtml(new Date(d.createdAt).toLocaleString())}</li>`)
+        .join("")}
+    </ul>
+  `;
+}
+
+// Opening a project loads its cached last analysis (if any) instantly via
+// restoreState() - the same function the old share-link flow used - but
+// leaves the feedback box itself empty: it's a staging area for new content
+// to drop in, not a place the full accumulated history gets dumped back
+// into (that would make one un-edited click of "Add to Project" duplicate
+// everything already there). Analyze always re-fetches the real history
+// from the server rather than reading this box, see runAnalysis() below.
+async function openProject(projectId) {
+  try {
+    const res = await fetch(`/api/projects/${projectId}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus(data.error || "Could not load project.", true);
+      return;
+    }
+
+    resetWorkspaceState({ clearProjectContext: false });
+    openProjectId = data.id;
+    openProjectName = data.name;
+    openProjectDrops = data.drops || [];
+    computeItemNumberToDrop();
+
+    if (data.lastAnalysis) {
+      restoreState(data.lastAnalysis);
+    }
+    feedbackInput.value = "";
+    updateFeedbackCount();
+
+    renderProjectContext();
+    renderDropHistory();
+    showWorkspace();
+    setStatus(`Opened "${data.name}". ${openProjectDrops.length ? "Click Analyze to run the pipeline over everything dropped so far." : "Add some feedback below to get started."}`);
+  } catch (err) {
+    setStatus("Could not load project.", true);
+  }
+}
+
+leaveProjectBtn.addEventListener("click", () => {
+  resetWorkspaceState();
+  renderProjectContext();
+  if (currentOrgId) {
+    loadProjects();
+    showProjectListView();
+  } else {
+    showOrgShellView();
+  }
+});
+
+addDropBtn.addEventListener("click", async () => {
+  if (!openProjectId) return;
+  const content = feedbackInput.value.trim();
+  if (!content) {
+    setStatus("Paste some feedback to add first.", true);
+    return;
+  }
+  addDropBtn.disabled = true;
+  try {
+    const result = await postJSON(`/api/projects/${openProjectId}/drops`, { content });
+    feedbackInput.value = "";
+    updateFeedbackCount();
+    const projRes = await fetch(`/api/projects/${openProjectId}`);
+    const projData = await projRes.json();
+    if (projRes.ok) {
+      openProjectDrops = projData.drops || [];
+      computeItemNumberToDrop();
+      renderDropHistory();
+    }
+    setStatus(`Added ${result.itemCount} item${result.itemCount === 1 ? "" : "s"} to "${openProjectName}". Click Analyze to include it.`);
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    addDropBtn.disabled = false;
+  }
+});
 
 // --- Stage 1: Input ---
 
@@ -266,21 +695,48 @@ async function runAnalysis() {
   // before that happens. A real click on an already-disabled button never
   // reaches here at all; this only matters for that narrow race.
   if (analyzeBtn.disabled) return false;
-  let feedback = feedbackInput.value.trim();
-  if (!feedback && !isMockMode) {
-    setStatus("Paste some feedback first, or click 'Try a Demo'.", true);
-    return false;
-  }
+  let feedback;
 
-  // Mock mode's response is a fixed canned dataset - it does not read the
-  // submitted text at all. Silently accepting arbitrary input (e.g. "hello")
-  // and returning an elaborate 8-theme analysis anyway is actively
-  // misleading about what demo mode is doing, so force the actual bundled
-  // sample data here and show it in the box, rather than pretend the two are
-  // connected.
-  if (isMockMode) {
-    if (!(await loadSampleData())) return false;
+  if (openProjectId) {
+    // Always re-analyzes the full accumulated drop history, not just
+    // whatever's staged in the textarea - fetched fresh so a teammate's
+    // drop since this page loaded is included too.
+    try {
+      const res = await fetch(`/api/projects/${openProjectId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setStatus(data.error || "Could not load project.", true);
+        return false;
+      }
+      openProjectDrops = data.drops || [];
+      computeItemNumberToDrop();
+      renderDropHistory();
+      feedback = (data.feedback || "").trim();
+    } catch (err) {
+      setStatus("Could not load project data.", true);
+      return false;
+    }
+    if (!feedback) {
+      setStatus("No feedback has been dropped into this project yet - add some above, then Analyze.", true);
+      return false;
+    }
+  } else {
     feedback = feedbackInput.value.trim();
+    if (!feedback && !isMockMode) {
+      setStatus("Paste some feedback first, or click 'Try a Demo'.", true);
+      return false;
+    }
+
+    // Mock mode's response is a fixed canned dataset - it does not read the
+    // submitted text at all. Silently accepting arbitrary input (e.g. "hello")
+    // and returning an elaborate 8-theme analysis anyway is actively
+    // misleading about what demo mode is doing, so force the actual bundled
+    // sample data here and show it in the box, rather than pretend the two are
+    // connected.
+    if (isMockMode) {
+      if (!(await loadSampleData())) return false;
+      feedback = feedbackInput.value.trim();
+    }
   }
 
   // Reset downstream stages so an old table/summary/PRD never shows alongside a new analysis.
@@ -401,12 +857,17 @@ function evidenceItemHtml(itemNumber, themeId, fitEntry, unclassifiedReason) {
       ? `<span class="keyword-note" title="This theme's sanity-check keywords don't appear in the item's primary issue - not necessarily wrong, just worth a second look">no keyword match</span>`
       : "";
   const reasonLine = unclassifiedReason ? `<div class="unclassified-reason">${escapeHtml(unclassifiedReason.detail)}</div>` : "";
+  const drop = itemNumberToDrop[itemNumber];
+  const attributionLine = drop
+    ? `<div class="evidence-attribution">Dropped by ${escapeHtml(drop.userName)} on ${escapeHtml(new Date(drop.createdAt).toLocaleString())}</div>`
+    : "";
 
   return `
     <li class="evidence-item ${flagged ? "flagged" : ""}" data-item-number="${itemNumber}">
       <div class="evidence-text">
         <span class="item-number">#${itemNumber}</span> "${escapeHtml(feedbackItems[itemNumber - 1] ?? "")}"
         ${reasonLine}
+        ${attributionLine}
       </div>
       <div class="evidence-controls no-print">
         ${fitBadge}
@@ -1038,22 +1499,23 @@ async function runDemo() {
 }
 demoBtn.addEventListener("click", () => runDemo());
 
-(async function showModeBanner() {
+(async function init() {
   try {
     const res = await fetch("/api/status");
-    const { mockMode, sharingEnabled } = await res.json();
+    const { mockMode, collabEnabled } = await res.json();
     isMockMode = mockMode;
     if (mockMode) {
       modeBanner.hidden = false;
       modeBanner.textContent = "Demo mode: this is a test run on sample data, not live Groq output.";
     }
-    if (!sharingEnabled) {
-      shareBtn.disabled = true;
-      shareBtn.title = "Sharing isn't configured on this server (needs DATABASE_URL) - see the README.";
+    if (!collabEnabled) {
+      loginBtn.disabled = true;
+      loginBtn.title = "Accounts aren't configured on this server (needs DATABASE_URL) - see the README.";
     }
   } catch (_) {
     /* server not reachable yet on first paint - ignore */
   }
+  await fetchMe();
 })();
 
 // Keep navigation aligned with the stages available in this analysis.
@@ -1104,12 +1566,10 @@ feedbackInput.addEventListener("input", updateFeedbackCount);
 // wired up above (stageObserver) already reacts to a stage's `hidden` flag
 // flipping by disabling its nav button and, once the active step is disabled,
 // falling back to "Feedback" - so step nav state doesn't need to be touched here.
-resetBtn.addEventListener("click", () => {
-  const hasProgress = clusteredThemes.length > 0 || feedbackInput.value.trim().length > 0;
-  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, priority edits, and any generated PRD.")) {
-    return;
-  }
-
+// Shared by the Reset button, "Leave project", and opening a different
+// project (which needs the analysis state cleared but the project context
+// itself left alone until the new project's data is in hand).
+function resetWorkspaceState({ clearProjectContext = true } = {}) {
   clusteredThemes = [];
   unclassifiedItems = [];
   unclassifiedReasons = {};
@@ -1117,9 +1577,14 @@ resetBtn.addEventListener("click", () => {
   feedbackItems = [];
   lastPrdMarkdown = "";
   lastPrdTheme = null;
-  currentProjectId = null; // detach from any shared link - starting over shouldn't overwrite it with an empty project
   clearTimeout(saveTimer);
-  if (location.pathname !== "/") history.replaceState(null, "", "/");
+
+  if (clearProjectContext) {
+    openProjectId = null;
+    openProjectName = "";
+    openProjectDrops = [];
+    itemNumberToDrop = {};
+  }
 
   feedbackInput.value = "";
   fileInput.value = "";
@@ -1137,13 +1602,22 @@ resetBtn.addEventListener("click", () => {
   summaryStage.hidden = true;
   prdStage.hidden = true;
   exportStage.hidden = true;
+}
 
+resetBtn.addEventListener("click", () => {
+  const hasProgress = clusteredThemes.length > 0 || feedbackInput.value.trim().length > 0;
+  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, priority edits, and any generated PRD.")) {
+    return;
+  }
+
+  resetWorkspaceState();
+  renderProjectContext();
   setStatus(null);
   $("inputStage").scrollIntoView({ behavior: "smooth", block: "start" });
   feedbackInput.focus();
 });
 
-// --- Sharing ---
+// --- Analysis snapshot (used to cache a project's last analysis) ---
 
 // Everything needed to reconstruct the workspace on another machine. Decisions
 // live on the theme objects themselves (t.decision, set by the decision
@@ -1217,7 +1691,8 @@ function restoreState(data) {
 }
 
 async function saveNow() {
-  const res = await fetch(`/api/projects/${currentProjectId}`, {
+  if (!openProjectId) return;
+  const res = await fetch(`/api/projects/${openProjectId}/analysis`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data: snapshotState() }),
@@ -1228,61 +1703,15 @@ async function saveNow() {
   }
 }
 
-// Called from every render function below once a project has a shareable
-// link, so edits (priority overrides, reassignments, decisions, a new PRD) reach
-// anyone else with the link without the PM having to click Share again. A
-// failed background save is swallowed - the next edit's save will retry - so
-// a flaky connection doesn't interrupt anyone's work with an error popup.
+// Called from every render function above once a project is open, so edits
+// (priority overrides, reassignments, decisions, a new PRD) reach any
+// teammate who opens the same project without extra clicks. A failed
+// background save is swallowed - the next edit's save will retry - so a
+// flaky connection doesn't interrupt anyone's work with an error popup.
 function scheduleSave() {
-  if (!currentProjectId || hydrating) return;
+  if (!openProjectId || hydrating) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     saveNow().catch(() => {});
   }, 800);
 }
-
-shareBtn.addEventListener("click", async () => {
-  if (!clusteredThemes.length) {
-    setStatus("Analyze some feedback first, then share the link.", true);
-    return;
-  }
-  setLoading(shareBtn, true);
-  try {
-    if (!currentProjectId) {
-      const res = await postJSON("/api/projects", { data: snapshotState() });
-      currentProjectId = res.id;
-      history.replaceState(null, "", `/p/${currentProjectId}`);
-    } else {
-      clearTimeout(saveTimer);
-      await saveNow();
-    }
-    await copyToClipboard(`${location.origin}/p/${currentProjectId}`, "Share link");
-  } catch (err) {
-    setStatus(err.message, true);
-  } finally {
-    setLoading(shareBtn, false, "Share");
-  }
-});
-
-// Loading /p/abc123 directly (server routes it to this same index.html - see
-// server/index.js) hydrates the workspace from whatever was last saved there,
-// instead of starting from an empty Stage 1.
-(async function hydrateFromShareLink() {
-  const match = location.pathname.match(/^\/p\/([A-Za-z0-9_-]+)$/);
-  if (!match) return;
-  currentProjectId = match[1];
-  try {
-    const res = await fetch(`/api/projects/${currentProjectId}`);
-    const body = await res.json();
-    if (!res.ok) {
-      setStatus(body.error || "Could not load this shared project.", true);
-      currentProjectId = null;
-      return;
-    }
-    restoreState(body.data);
-    setStatus("Loaded shared project - your edits here save back to this same link.");
-  } catch (err) {
-    setStatus("Could not load this shared project.", true);
-    currentProjectId = null;
-  }
-})();

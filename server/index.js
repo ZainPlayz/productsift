@@ -8,12 +8,19 @@ import clusterRouter from "./routes/cluster.js";
 import prioritizeRouter from "./routes/prioritize.js";
 import prdRouter from "./routes/prd.js";
 import projectsRouter from "./routes/projects.js";
+import authRouter from "./routes/authRoutes.js";
+import orgsRouter from "./routes/orgs.js";
 import { DB_ENABLED } from "./db.js";
 import { MOCK_MODE } from "./llmClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+
+// Render (and most hosts) terminate TLS at a proxy in front of the app -
+// without this, req.secure (and therefore the session cookie's "secure"
+// flag) never reflects reality in production.
+app.set("trust proxy", 1);
 
 // Standard secure headers. The default CSP is tightened to same-origin, with
 // one explicit exception for the jsdelivr CDN this page's index.html loads
@@ -45,7 +52,7 @@ const llmRateLimiter = rateLimit({
 });
 
 app.get("/api/status", (req, res) => {
-  res.json({ mockMode: MOCK_MODE, sharingEnabled: DB_ENABLED });
+  res.json({ mockMode: MOCK_MODE, collabEnabled: DB_ENABLED });
 });
 
 // Lives at the project root (not public/) so it reads as bundled sample data,
@@ -68,24 +75,30 @@ app.use("/api/cluster", llmRateLimiter, clusterRouter);
 app.use("/api/prioritize", llmRateLimiter, prioritizeRouter);
 app.use("/api/prd", llmRateLimiter, prdRouter);
 
-// Save/load don't call an LLM, so they get a much more generous limit than
-// the LLM routes above - it only needs to stop outright abuse of the DB, not
-// ration a scarce daily quota.
-const projectsRateLimiter = rateLimit({
+// Org/project CRUD and drop uploads don't call an LLM, so they get a much
+// more generous limit than the LLM routes above - it only needs to stop
+// outright abuse of the DB, not ration a scarce daily quota.
+const dbRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests - wait a moment before trying again." },
 });
-app.use("/api/projects", projectsRateLimiter, projectsRouter);
+app.use("/api/orgs", dbRateLimiter, orgsRouter);
+app.use("/api/projects", dbRateLimiter, projectsRouter);
 
-// A shared project link (e.g. /p/abc123) is a client-side route - there's no
-// file at that path, so serve the same index.html and let app.js read the ID
-// from the URL and fetch the project data itself.
-app.get("/p/:id", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "public", "index.html"));
+// Its own, tighter limiter - brute-forcing a password or enumerating emails
+// via signup/login is a different threat than the LLM-quota and DB-abuse
+// tiers above, and deserves a tighter budget than either.
+const authRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests - wait a moment before trying again." },
 });
+app.use("/api/auth", authRateLimiter, authRouter);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

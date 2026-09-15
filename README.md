@@ -49,12 +49,16 @@ something that fires on its own** below.
    genuinely different output than pressing Ctrl+P yourself, not the same page with a stylesheet
    swapped in. See **Why the print report is built, not just styled** below. Copy PRD and Copy
    Roadmap Summary give the same content as plain text, for pasting into Slack/email/docs.
-7. **Share** — click Share to get a persistent link (`/p/abc123`) backed by a real database, not
-   a snapshot. Anyone with the link sees the current state on load, and every edit anyone makes
-   after that — a reassignment, a priority override, a decision, a new PRD — autosaves back to the
-   same link (roughly a second after the edit, debounced) so the next person to open it sees it
-   too. Requires `DATABASE_URL` to be set (see [Setup](#setup)); without it the button just
-   disables itself with an explanatory tooltip instead of breaking.
+7. **Organizations & projects** — log in, create an org, and create a project inside it; anyone
+   else added to that org can open the same project and drop in their own feedback. Every drop is
+   attributed (who, and when) and shown in a drop history panel, and Analyze always re-runs the
+   full pipeline over everything ever dropped into the project, not just the most recent paste -
+   supporting-evidence quotes in the theme cards show which teammate's drop each item came from.
+   The last computed analysis is cached per project, so reopening one shows results instantly
+   without waiting on a fresh AI call. This is additive: the single-paste flow above still works
+   for a logged-out visitor with no account at all. Requires `DATABASE_URL` (see
+   [Setup](#setup)); without it, logging in disables itself with an explanatory tooltip instead of
+   breaking.
 
 ## Whose API quota gets used?
 
@@ -82,16 +86,17 @@ To get real, AI-generated clustering/scoring/PRD output:
    [console.groq.com/keys](https://console.groq.com/keys).
 2. In `.env`, set `GROQ_API_KEY=...` and `MOCK_MODE=false`.
 
-To enable the **Share** button (optional):
+To enable **accounts, organizations, and projects** (optional):
 
 1. Create a free Postgres database at [neon.tech](https://neon.tech) (no credit card, and unlike
-   some free-tier databases it doesn't pause after a week of inactivity, which matters for a link
-   meant to stay live).
+   some free-tier databases it doesn't pause after a week of inactivity, which matters for a
+   project meant to stay live and shared).
 2. Copy its connection string into `.env` as `DATABASE_URL=postgresql://...`.
 
-The `projects` table is created automatically on first use - no migration step. Leave
-`DATABASE_URL` unset and the rest of the app works exactly the same; only the Share button
-disables itself.
+All the tables (`users`, `sessions`, `organizations`, `org_members`, `projects`,
+`feedback_drops`) are created automatically on first use - no migration step. Leave
+`DATABASE_URL` unset and the rest of the app works exactly the same; only the **Log in** button
+disables itself, so the single-paste demo flow is always available regardless.
 
 Then run:
 
@@ -120,7 +125,8 @@ steps to go live:
    and point it at this repo).
 2. When prompted, add `GROQ_API_KEY` as an environment variable (Render's blueprint flow asks
    for any var marked `sync: false` — the key never gets committed to the repo). Optionally add
-   `DATABASE_URL` too (a free Neon Postgres string) to enable the Share button on this deployment.
+   `DATABASE_URL` too (a free Neon Postgres string) to enable accounts/organizations/projects on
+   this deployment.
 3. Deploy. Render builds with `npm install` and starts with `npm start`.
 
 **Public deployments default to `MOCK_MODE=false`** (set in `render.yaml`) — every visitor shares
@@ -241,13 +247,28 @@ already changed once during this project's own development.
 
 - **The API key never reaches the browser.** It lives only in `.env`, read server-side by
   `server/llmClient.js`. The frontend only ever talks to this app's own `/api/*` routes.
-- **Per-IP rate limiting** (`express-rate-limit`, in `server/index.js`) caps the three
-  LLM-calling routes (`/api/cluster`, `/api/prioritize`, `/api/prd`) at 10 requests/minute per
-  IP. This protects a shared free-tier quota (or a paid bill) from a runaway client loop or one
-  abusive IP, and returns a clear `429` with a JSON error the frontend already displays. It's a
-  burst guard, not a total-spend cap - it doesn't limit the sum of requests across many distinct
-  real visitors, so a busy public deployment can still exhaust a shared daily quota under genuine
-  traffic (see **Deploy** above for the `MOCK_MODE` fallback if that risk matters for your case).
+- **Per-IP rate limiting** (`express-rate-limit`, in `server/index.js`), tiered by threat model:
+  the three LLM-calling routes (`/api/cluster`, `/api/prioritize`, `/api/prd`) at 10
+  requests/minute per IP, guarding a shared quota/bill from a runaway loop or abusive IP; the
+  org/project/drop routes (`/api/orgs`, `/api/projects`) at a more generous 60/minute, since they
+  don't call an LLM and only need to stop outright DB abuse; and `/api/auth` at its own 10/minute,
+  since brute-forcing a password or enumerating emails via signup/login is a distinct threat from
+  either of the above. All three return a clear `429` with a JSON error the frontend already
+  displays. None of these are a total-spend cap - they don't limit the sum of requests across many
+  distinct real visitors, so a busy public deployment can still exhaust a shared daily LLM quota
+  under genuine traffic (see **Deploy** above for the `MOCK_MODE` fallback if that risk matters for
+  your case).
+- **Accounts are real, not decorative.** Passwords are hashed with Node's built-in `crypto.scrypt`
+  (never stored or logged in plaintext) and verified with a timing-safe comparison. Session
+  cookies are a random 32-byte token; only its SHA-256 hash is ever stored server-side, so a
+  database read or leak alone can't be replayed as a valid session. Cookies are `httpOnly`,
+  `sameSite=lax`, and `secure` in production. See **Why hand-rolled sessions, not
+  `express-session`** below for why this isn't a library.
+- **Org/project access checks fail closed and don't leak existence.** Every `/api/orgs/*` and
+  `/api/projects/*` route re-checks membership against the database on every request (no
+  client-trusted role claims), and a request for an org/project you don't belong to returns a
+  plain `404`, identical to one that doesn't exist at all - never a `403` that would confirm a
+  given ID is real to someone who can't see it.
 - **Standard security headers** (`helmet`) — CSP, no-sniff, frame-ancestors, etc. The CSP is
   locked to same-origin with one explicit exception for the jsdelivr CDN `index.html` loads
   `marked.js` from.
@@ -267,9 +288,13 @@ already changed once during this project's own development.
   frequency/severity/priority numbers present in the theme data, and to describe metrics
   directionally ("reduce load time materially") rather than assert invented targets.
 
-This is still a local single-user demo, not a hardened multi-tenant service — there's no auth,
-and the rate limiter's per-IP state resets if the process restarts. Good enough for a portfolio
-demo and a real starting point, not a substitute for review before any public deployment.
+This isn't a hardened enterprise multi-tenant service - the rate limiter's per-IP state resets if
+the process restarts, there's no email verification or password reset (this project has zero
+email-sending infrastructure - a known, documented gap, not an oversight), and org invites only
+work if the invitee already has an account (see **Why organizations use a 2-role model, not
+per-project permissions** below). Good enough for a portfolio demo and a real starting point with
+genuine auth and access control underneath it, not a substitute for a security review before any
+deployment handling real user data.
 
 ## Why it's built this way (for interviews)
 
@@ -548,34 +573,68 @@ not just the sample data - remains the natural next verification step.
 
 **Why the database is optional, not required.**
 The core analysis loop deliberately has zero persistence dependency — state lives in the
-browser's JS memory, and the app is fully usable with nothing but Node and a Groq key. Sharing
-(`/p/:id`) is a separate, additive layer on top: one `projects` table (`id`, `data jsonb`,
-timestamps) storing a full snapshot of that in-memory state, behind routes that no-op cleanly
-(`501`, button disabled) when `DATABASE_URL` isn't set. That's a deliberate boundary, not an
-oversight — a demo tool shouldn't *require* infrastructure just to run, but a "share this with my
-team" feature legitimately needs somewhere durable to write to, so it gets its own optional
-dependency instead of forcing one on everybody. Edits autosave (800ms debounced) rather than
-requiring an explicit "save" step, so a shared link stays current without the owner having to
-remember to re-share it.
+browser's JS memory, and the single-paste flow is fully usable with nothing but Node and a Groq
+key. Accounts, organizations, and projects are a separate, additive layer on top: six tables
+(`users`, `sessions`, `organizations`, `org_members`, `projects`, `feedback_drops`) behind routes
+that no-op cleanly (`501`, login disabled) when `DATABASE_URL` isn't set. That's a deliberate
+boundary, not an oversight — a demo tool shouldn't *require* infrastructure just to run, but a
+real multi-person "drop feedback into a shared project" feature legitimately needs somewhere
+durable to write to, so it gets its own optional dependency instead of forcing one on everybody.
+Cached analysis results autosave (800ms debounced) rather than requiring an explicit "save" step,
+so a project stays current without whoever's looking at it having to remember to save.
+
+**Why hand-rolled sessions, not `express-session` (or bcrypt, or jsonwebtoken).**
+This project already hand-rolls every other simple mechanism with Node's stdlib instead of adding
+a dependency for it — random IDs are `crypto.randomBytes(6).toString("base64url")`, not a uuid
+library; an earlier "bring your own API key" feature was deliberately reverted specifically because
+a simpler mechanism already covered the underlying problem without the added complexity. Sessions
+follow the same principle: `server/auth.js` hashes passwords with `crypto.scrypt` (random 16-byte
+salt, N=16384/r=8/p=1, stored as a self-describing `scrypt:N:r:p:salt:hash` string) and verifies
+with `crypto.timingSafeEqual`; a session token is `crypto.randomBytes(32)`, and only its SHA-256
+hash — never the raw token — is ever written to the `sessions` table, so a database read or leak
+alone can't be replayed as a valid cookie. The `Cookie` header is parsed with a short manual
+`.split(";")` loop rather than `cookie-parser`. None of this is "don't use a library on
+principle" — `express-rate-limit` and `helmet` are both used precisely because rate limiting and
+security headers are easy to get subtly wrong by hand — it's that scrypt/timingSafeEqual/
+randomBytes are already in Node, already correct, and a session system this small doesn't need
+`express-session`'s store abstraction or `jsonwebtoken`'s claims/expiry machinery on top of them.
+
+**Why organizations use a 2-role model (owner/member), not per-project permissions.**
+The feature request was "anyone in an org can drop data into a shared project" — every member
+having equal read/write access to every project in their org is the actual requirement, not an
+incidental simplification. The only privileged action anywhere in the org/project surface is
+adding a new member, which is why `role` only gates that one thing (`POST
+/api/orgs/:orgId/members` in `server/routes/orgs.js`), and everything else — creating a project,
+opening one, dropping feedback, triggering Analyze — only checks *membership*, not role. A
+per-project ACL layer would be solving a problem nobody described; adding one later, if a real
+need for it shows up, is an additive change on top of this, not a rework of it. Org invites are
+also deliberately add-by-email-only and require the invitee to already have an account (`404`
+otherwise, from the same route) — this project has zero email-sending infrastructure, so an
+invite-link flow would need its own token table and a way to actually deliver the link, more
+machinery than a portfolio-scale tool needs for v1. Documented as a known gap here rather than
+silently left unexplained, same as every other honestly-stated tradeoff in this README.
 
 ## Project structure
 
 ```
 server/
-  index.js              Express app: helmet, rate limiting, serves public/, mounts routes, serves /p/:id
+  index.js              Express app: helmet, tiered rate limiting, serves public/, mounts routes
   llmClient.js            Groq client + MODEL + MOCK_MODE + Zod-to-JSON-Schema helper
   schemas.js              Zod schemas shared by the cluster & prioritize routes
   feedbackItems.js         Splits raw feedback into the numbered items themes trace back to
-  db.js                    Optional Neon/Postgres client - DB_ENABLED is false with no DATABASE_URL
+  db.js                    Optional Neon/Postgres client + schema - DB_ENABLED is false with no DATABASE_URL
+  auth.js                  Password hashing (scrypt), sessions, cookie parsing, requireAuth middleware
   routes/
     cluster.js            POST /api/cluster    - 3-call pipeline (discover, classify, validate), evidence gated + built in code
     prioritize.js          POST /api/prioritize  - Impact x Severity scoring
     prd.js                  POST /api/prd         - PRD generation
-    projects.js             POST/GET/PUT /api/projects - save/load a shared project snapshot
+    authRoutes.js            POST/GET /api/auth   - signup, login, logout, /me
+    orgs.js                  POST/GET /api/orgs   - create/list orgs, members, projects within an org
+    projects.js              GET /api/projects/:id, POST .../drops, PUT .../analysis - a project's attributed feedback drops + cached analysis
   mocks/
     fixtures.js             MOCK_MODE canned/templated responses
 public/
-  index.html, style.css, app.js   Static frontend, no build step
+  index.html, style.css, app.js   Static frontend, no build step - anonymous workspace + auth/org/project views
 sample-feedback.txt       Bundled 52-item sample dataset - "Analyze Feedback" after pasting/uploading it, or the CSV version below
 sample-feedback.csv       The same content as an App Store Connect-style review export (Review ID/Rating/Title/Review Text/Date/Version/Territory columns) - for trying the CSV upload path specifically
 demo-feedback.txt         Smaller 9-item dataset "Try a Demo" uses - a live analysis of the full 52-item file measured 100+ seconds, too slow for a one-click demo (see below)

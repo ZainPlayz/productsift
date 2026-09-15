@@ -146,6 +146,7 @@ td,
 .app-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   padding: 24px clamp(16px, 4vw, 48px);
@@ -156,7 +157,7 @@ td,
 .app-header h1 { margin: 0 0 4px; font-size: 1.5rem; }
 .subtitle { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
 
-.header-actions { display: flex; align-items: center; gap: 10px; }
+.header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px 10px; }
 
 .theme-toggle {
   background: var(--subtle-bg);
@@ -261,6 +262,113 @@ textarea {
 .mode-banner { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
 .status-banner { background: var(--accent); color: var(--primary-dark); }
 .status-banner.error { background: var(--error-bg); color: var(--error-text); }
+
+/* --- Auth & collaboration (login form, org/project pickers, drop history) --- */
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+  color: var(--text);
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus {
+  border-color: var(--primary);
+  outline: 3px solid var(--accent);
+}
+
+.controls-row input[type="text"],
+.controls-row input[type="email"],
+.controls-row input[type="password"] {
+  flex: 1 1 220px;
+  width: auto;
+}
+
+.auth-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.auth-card { max-width: 420px; margin: 0 auto; }
+.auth-card form > div { margin-bottom: 4px; }
+
+.list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.list-item:hover { border-color: var(--primary); background: var(--accent); }
+
+.member-list {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+  font-size: 0.88rem;
+}
+
+.member-list li { padding: 6px 0; border-bottom: 1px solid var(--divider-soft); }
+.member-list li:last-child { border-bottom: none; }
+
+.list-item-meta,
+.member-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.project-context {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.project-context #projectContextName { font-weight: 600; color: var(--text); }
+
+.drop-history {
+  margin: 8px 0 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--subtle-bg);
+}
+
+.drop-history h3 { margin: 0 0 6px; font-size: 0.85rem; }
+.drop-history ul { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; color: var(--text-muted); }
+.drop-history li { padding: 3px 0; }
+
+.evidence-attribution {
+  margin-top: 3px;
+  font-size: 0.76rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
 
 .themes-grid {
   display: grid;
@@ -756,7 +864,12 @@ table { font-size: 14px; }
   .workspace-intro h1 { font-size: 44px; }
   .workspace-intro > p:last-child { font-size: 16px; }
   .card { padding: 24px 20px; border-radius: 20px; }
-  .status-banner { top: 126px; }
+  /* A logged-in header can wrap to more than one line on a narrow screen
+     (name + Organizations/Log out/Reset/Dark mode don't all fit one row) -
+     a fixed sticky offset tuned for the single-row header would then sit
+     too high and get covered. Simplest fix that holds at any header height:
+     don't stick it here at all - it just scrolls with the page instead. */
+  .status-banner { position: static; top: auto; }
   .input-meta { font-size: 12px; }
   #analyzeBtn { width: 100%; justify-content: center; margin: 4px 0 0; }
   .btn { padding: 11px 16px; }

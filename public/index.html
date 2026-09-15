@@ -13,12 +13,61 @@
   <header class="app-header no-print">
     <a class="brand" href="#inputStage"><span class="brand-mark" aria-hidden="true">↗</span> Product<span class="brand-light">Sift</span></a>
     <div class="header-actions">
-      <button id="shareBtn" class="btn btn-secondary" type="button">Share</button>
+      <span id="authStatus" class="auth-status" hidden></span>
+      <button id="loginBtn" class="btn btn-secondary" type="button">Log in</button>
+      <button id="orgsBtn" class="btn btn-secondary" type="button" hidden>Organizations</button>
+      <button id="logoutBtn" class="btn btn-secondary" type="button" hidden>Log out</button>
       <button id="resetBtn" class="btn btn-secondary" type="button">Reset</button>
       <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle dark mode"></button>
     </div>
   </header>
-  <div class="workspace-shell">
+  <!-- Logged-out default view is .workspace-shell below, unchanged - this is
+       shown only after clicking "Log in" in the header. -->
+  <section class="card auth-card" id="authView" hidden>
+    <h2 id="authViewTitle">Log in</h2>
+    <p class="hint no-print">Accounts are for collaborating with a team in an organization - the anonymous demo below still works with no login at all.</p>
+    <p class="status-banner error" id="authViewError" hidden></p>
+    <form id="authForm">
+      <div id="authNameField" hidden>
+        <div class="input-heading"><label for="authName">Name</label></div>
+        <input type="text" id="authName" autocomplete="name" />
+      </div>
+      <div class="input-heading"><label for="authEmail">Email</label></div>
+      <input type="email" id="authEmail" autocomplete="email" required />
+      <div class="input-heading"><label for="authPassword">Password</label></div>
+      <input type="password" id="authPassword" autocomplete="current-password" required />
+      <div class="controls-row no-print">
+        <button type="submit" id="authSubmitBtn" class="btn btn-primary">Log in</button>
+        <button type="button" id="authToggleModeBtn" class="btn btn-secondary">Need an account? Sign up</button>
+        <button type="button" id="authCancelBtn" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Shown once logged in, before an org is selected. -->
+  <section class="card" id="orgShellView" hidden>
+    <h2>Organizations</h2>
+    <p class="hint">Pick an organization to see its projects, or create a new one.</p>
+    <div id="orgList" class="org-list"></div>
+    <div class="controls-row no-print">
+      <input type="text" id="newOrgName" placeholder="New organization name" />
+      <button id="createOrgBtn" class="btn btn-primary">Create Organization</button>
+    </div>
+  </section>
+
+  <!-- Shown once an org is selected, before a project is opened. -->
+  <section class="card" id="projectListView" hidden>
+    <button id="backToOrgsBtn" class="btn btn-secondary no-print">&larr; All organizations</button>
+    <h2 id="projectListTitle">Projects</h2>
+    <div id="membersPanel"></div>
+    <div id="projectList" class="project-list"></div>
+    <div class="controls-row no-print">
+      <input type="text" id="newProjectName" placeholder="New project name" />
+      <button id="createProjectBtn" class="btn btn-primary">Create Project</button>
+    </div>
+  </section>
+
+  <div class="workspace-shell" id="workspaceShell">
     <aside class="workflow no-print">
       <p class="eyebrow">WORKSPACE</p>
       <nav aria-label="Analysis steps" id="stepNav">
@@ -35,12 +84,18 @@
       <div id="statusBanner" class="status-banner no-print" role="status" aria-live="polite" hidden></div>
     <!-- Stage 1: Input -->
     <section class="card" id="inputStage">
-      <h2>Feedback Input</h2>
-      <p class="hint">Paste raw feedback (one item per line), or upload a .csv export from App Store Connect, Play Console, Zendesk, Intercom, or a form tool.</p>
+      <div id="projectContext" class="project-context no-print" hidden>
+        <button id="leaveProjectBtn" class="btn btn-secondary">&larr; Projects</button>
+        <span id="projectContextName"></span>
+      </div>
+      <h2 id="inputStageTitle">Feedback Input</h2>
+      <p class="hint" id="inputStageHint">Paste raw feedback (one item per line), or upload a .csv export from App Store Connect, Play Console, Zendesk, Intercom, or a form tool.</p>
+      <div id="dropHistory" class="drop-history" hidden></div>
       <div class="input-heading"><label for="feedbackInput">User feedback</label><span>One item per line</span></div><textarea id="feedbackInput" rows="7" placeholder="Paste raw user feedback here, one item per line..."></textarea><div class="input-meta"><span id="feedbackCount">0 characters</span><span>20,000 characters max</span></div>
       <div class="controls-row no-print">
         <label class="btn btn-secondary file-label">Upload file<input type="file" id="fileInput" accept=".txt,.csv,text/plain,text/csv" /></label>
         <button id="demoBtn" class="btn btn-secondary" title="Runs the full pipeline (Analyze, Prioritize, Roadmap Summary) on a bundled sample dataset">Try a Demo</button>
+        <button id="addDropBtn" class="btn btn-secondary" hidden>Add to Project</button>
         <button id="analyzeBtn" class="btn btn-primary">Analyze Feedback</button>
       </div>
     </section>

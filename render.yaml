@@ -19,8 +19,9 @@ services:
       # Set in the Render dashboard (Environment tab) - never committed.
       - key: GROQ_API_KEY
         sync: false
-      # Optional - enables the "Share" button (a persisted, linkable project).
-      # A free Postgres connection string from https://neon.tech works well.
-      # Leave unset in the dashboard and sharing is simply disabled.
+      # Optional - enables accounts, organizations, and projects (login,
+      # orgs, shared projects with attributed feedback drops). A free
+      # Postgres connection string from https://neon.tech works well. Leave
+      # unset in the dashboard and logging in is simply disabled.
       - key: DATABASE_URL
         sync: false
