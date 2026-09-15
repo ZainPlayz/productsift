@@ -63,8 +63,6 @@ const copyPrdBtn = $("copyPrdBtn");
 const copySummaryBtn = $("copySummaryBtn");
 const statusBanner = $("statusBanner");
 const modeBanner = $("modeBanner");
-const themeToggle = $("themeToggle");
-const resetBtn = $("resetBtn");
 
 const authStatus = $("authStatus");
 const loginBtn = $("loginBtn");
@@ -98,36 +96,9 @@ const projectContextName = $("projectContextName");
 const leaveProjectBtn = $("leaveProjectBtn");
 const inputStageTitle = $("inputStageTitle");
 const inputStageHint = $("inputStageHint");
+const feedbackInputLabel = $("feedbackInputLabel");
 const dropHistory = $("dropHistory");
 const addDropBtn = $("addDropBtn");
-
-// --- Theme (light/dark) ---
-// The <head> script already applied any saved choice before first paint, to
-// avoid a flash of the wrong theme. This just keeps the toggle button's
-// label in sync and handles the click - localStorage is the right tool here
-// (a per-viewer display preference, not app data), unlike the analysis
-// state above which intentionally lives only in memory.
-function systemPrefersDark() {
-  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
-function currentTheme() {
-  return document.documentElement.getAttribute("data-theme") || (systemPrefersDark() ? "dark" : "light");
-}
-
-function updateThemeToggleLabel() {
-  const isDark = currentTheme() === "dark";
-  themeToggle.textContent = isDark ? "Light mode" : "Dark mode";
-}
-
-themeToggle.addEventListener("click", () => {
-  const next = currentTheme() === "dark" ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", next);
-  localStorage.setItem("theme", next);
-  updateThemeToggleLabel();
-});
-
-updateThemeToggleLabel();
 
 function setStatus(message, isError = false) {
   if (!message) {
@@ -461,33 +432,65 @@ function renderProjectContext() {
   if (openProjectId) {
     projectContext.hidden = false;
     projectContextName.textContent = openProjectName;
-    inputStageTitle.textContent = `Feedback Input — ${openProjectName}`;
-    inputStageHint.textContent = "Paste feedback and click \"Add to Project\" to drop it in for the team - or just click Analyze to run the full pipeline across everything dropped so far.";
+    inputStageTitle.textContent = openProjectName;
+    inputStageHint.textContent = "Everyone in this org can drop feedback into this project. Review what's already here, then add your own below - Analyze always runs across everything dropped so far, not just your addition.";
+    feedbackInputLabel.textContent = "Add feedback";
     addDropBtn.hidden = false;
+    demoBtn.hidden = true; // the sample-data demo is for the anonymous flow, not a real shared project
   } else {
     projectContext.hidden = true;
     inputStageTitle.textContent = "Feedback Input";
     inputStageHint.textContent = "Paste raw feedback (one item per line), or upload a .csv export from App Store Connect, Play Console, Zendesk, Intercom, or a form tool.";
+    feedbackInputLabel.textContent = "User feedback";
     addDropBtn.hidden = true;
+    demoBtn.hidden = false;
     dropHistory.hidden = true;
     dropHistory.innerHTML = "";
   }
 }
 
+// Shows what's already in the project *before* the PM types anything, so
+// opening a project reads as "here's the team's feedback so far, add more
+// if you have it" rather than an empty box that looks like nothing has
+// happened yet. Each drop is its own card (who, when, and its actual
+// content split into items the same way splitFeedbackItems() does
+// server-side) rather than one flattened list, so it's clear which items
+// came from which drop.
 function renderDropHistory() {
-  if (!openProjectId || !openProjectDrops.length) {
+  if (!openProjectId) {
     dropHistory.hidden = true;
     dropHistory.innerHTML = "";
     return;
   }
   dropHistory.hidden = false;
+
+  if (!openProjectDrops.length) {
+    dropHistory.innerHTML = `
+      <h3>Feedback already in this project</h3>
+      <p class="hint">Nothing's been dropped in yet - add some below to get started.</p>
+    `;
+    return;
+  }
+
   dropHistory.innerHTML = `
-    <h3>Drop history</h3>
-    <ul>
-      ${openProjectDrops
-        .map((d) => `<li>${escapeHtml(d.userName)} dropped ${d.itemCount} item${d.itemCount === 1 ? "" : "s"} &middot; ${escapeHtml(new Date(d.createdAt).toLocaleString())}</li>`)
-        .join("")}
-    </ul>
+    <h3>Feedback already in this project</h3>
+    ${openProjectDrops
+      .map(
+        (d) => `
+      <div class="drop-card">
+        <div class="drop-card-meta">${escapeHtml(d.userName)} &middot; ${escapeHtml(new Date(d.createdAt).toLocaleString())} &middot; ${d.itemCount} item${d.itemCount === 1 ? "" : "s"}</div>
+        <ul class="drop-card-items">
+          ${(d.content || "")
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => `<li>${escapeHtml(line)}</li>`)
+            .join("")}
+        </ul>
+      </div>
+    `,
+      )
+      .join("")}
   `;
 }
 
@@ -522,7 +525,7 @@ async function openProject(projectId) {
     renderProjectContext();
     renderDropHistory();
     showWorkspace();
-    setStatus(`Opened "${data.name}". ${openProjectDrops.length ? "Click Analyze to run the pipeline over everything dropped so far." : "Add some feedback below to get started."}`);
+    setStatus(null);
   } catch (err) {
     setStatus("Could not load project.", true);
   }
@@ -1559,16 +1562,14 @@ feedbackInput.addEventListener("input", updateFeedbackCount);
 
 // --- Reset ---
 
-// Clears every in-memory stage so a PM can start a new analysis without a
-// page refresh (which would also lose the theme toggle's read of localStorage
-// mid-load and re-trigger the mode-banner fetch for no reason). Hiding each
-// downstream stage - rather than removing it - is enough: the MutationObserver
-// wired up above (stageObserver) already reacts to a stage's `hidden` flag
-// flipping by disabling its nav button and, once the active step is disabled,
-// falling back to "Feedback" - so step nav state doesn't need to be touched here.
-// Shared by the Reset button, "Leave project", and opening a different
-// project (which needs the analysis state cleared but the project context
-// itself left alone until the new project's data is in hand).
+// Clears every in-memory stage - used internally when opening a different
+// project (analysis state cleared, project context left alone until the new
+// project's data is in hand) or leaving one/logging out (full clear).
+// Hiding each downstream stage - rather than removing it - is enough: the
+// MutationObserver wired up above (stageObserver) already reacts to a
+// stage's `hidden` flag flipping by disabling its nav button and, once the
+// active step is disabled, falling back to "Feedback" - so step nav state
+// doesn't need to be touched here.
 function resetWorkspaceState({ clearProjectContext = true } = {}) {
   clusteredThemes = [];
   unclassifiedItems = [];
@@ -1603,19 +1604,6 @@ function resetWorkspaceState({ clearProjectContext = true } = {}) {
   prdStage.hidden = true;
   exportStage.hidden = true;
 }
-
-resetBtn.addEventListener("click", () => {
-  const hasProgress = clusteredThemes.length > 0 || feedbackInput.value.trim().length > 0;
-  if (hasProgress && !confirm("Reset and start over? This clears the current analysis, priority edits, and any generated PRD.")) {
-    return;
-  }
-
-  resetWorkspaceState();
-  renderProjectContext();
-  setStatus(null);
-  $("inputStage").scrollIntoView({ behavior: "smooth", block: "start" });
-  feedbackInput.focus();
-});
 
 // --- Analysis snapshot (used to cache a project's last analysis) ---
 

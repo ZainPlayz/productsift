@@ -85,6 +85,7 @@ router.get("/:projectId", async (req, res) => {
         id: d.id,
         userId: d.user_id,
         userName: d.user_name,
+        content: d.content,
         itemCount: d.item_count,
         createdAt: d.created_at,
       })),

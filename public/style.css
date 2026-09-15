@@ -31,38 +31,8 @@
   --transition-theme: 0.25s ease;
 }
 
-:root[data-theme="dark"] {
-  --bg: #14171f;
-  --card-bg: #1b1f2a;
-  --subtle-bg: #20242f;
-  --panel-bg: #20242f;
-  --input-bg: #12151d;
-  --border: #2e3342;
-  --divider-soft: #262b38;
-  --text: #e7e9ee;
-  --text-muted: #9aa1b1;
-  --primary: #7c9bff;
-  --primary-dark: #b7c6ff;
-  --primary-hover: #29314a;
-  --accent: #1e2740;
-  --severity-low: #7ed195;
-  --severity-mid: #e3b567;
-  --severity-high: #ea8383;
-  --tint-green: #16261c;
-  --tint-amber: #2c2412;
-  --tint-red: #2c1a1a;
-  --tint-neutral: #232734;
-  --flag-bg: #2a2414;
-  --warn-bg: #2c2410;
-  --warn-text: #e8c874;
-  --warn-border: #4a3d1a;
-  --error-bg: #2c1616;
-  --error-text: #ee8f8f;
-  --row-alt-bg: #1d212b;
-}
-
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root {
     --bg: #14171f;
     --card-bg: #1b1f2a;
     --subtle-bg: #20242f;
@@ -158,24 +128,6 @@ td,
 .subtitle { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
 
 .header-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px 10px; }
-
-.theme-toggle {
-  background: var(--subtle-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
-}
-
-.theme-toggle:hover { background: var(--primary-hover); }
-.theme-toggle:active { transform: scale(0.96); }
 
 main {
   max-width: 960px;
@@ -357,11 +309,29 @@ input[type="password"]:focus {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--subtle-bg);
+  max-height: 340px;
+  overflow-y: auto;
 }
 
-.drop-history h3 { margin: 0 0 6px; font-size: 0.85rem; }
-.drop-history ul { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; color: var(--text-muted); }
-.drop-history li { padding: 3px 0; }
+.drop-history h3 { margin: 0 0 10px; font-size: 0.85rem; }
+.drop-history .hint { margin: 0; font-size: 0.85rem; }
+
+.drop-card {
+  padding: 10px 0;
+  border-top: 1px solid var(--divider-soft);
+}
+
+.drop-card:first-of-type { border-top: none; padding-top: 0; }
+
+.drop-card-meta {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.drop-card-items { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+.drop-card-items li { padding: 2px 0; }
 
 .evidence-attribution {
   margin-top: 3px;
@@ -741,14 +711,8 @@ tr.rank-1 td { background: var(--accent); font-weight: 600; }
   --primary: #0071e3; --primary-dark: #005bb8; --primary-hover: #e5f0fc;
   --accent: #edf5ff; --border: #dedee3; --radius: 24px;
 }
-:root[data-theme="dark"] {
-  --bg: #101012; --card-bg: #1c1c1e; --subtle-bg: #242426;
-  --panel-bg: #242426; --input-bg: #18181a; --text: #f5f5f7;
-  --text-muted: #adadb5; --border: #3a3a3e; --primary: #2997ff;
-  --primary-dark: #8cc6ff; --primary-hover: #19324a; --accent: #172a3d;
-}
 @media (prefers-color-scheme: dark) {
-:root:not([data-theme="light"]) {
+:root {
   --bg: #101012; --card-bg: #1c1c1e; --subtle-bg: #242426;
   --panel-bg: #242426; --input-bg: #18181a; --text: #f5f5f7;
   --text-muted: #adadb5; --border: #3a3a3e; --primary: #2997ff;
@@ -768,7 +732,6 @@ button, input, select { font-family: inherit; }
 .brand-light { font-weight: 400; color: var(--text-muted); }
 .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; margin-right: 5px; border-radius: 10px; background: var(--text); color: var(--card-bg); font-size: 24px; }
 .header-caption { font-size: 14px; color: var(--text-muted); }
-.theme-toggle { font-size: 14px; font-weight: 500; padding: 9px 16px; background: transparent; }
 .workspace-shell { max-width: 1380px; margin: auto; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 48px; padding: 0 28px; }
 .workflow { position: sticky; top: 112px; align-self: start; padding-top: 18px; }
 .eyebrow { font-size: 12px; font-weight: 650; letter-spacing: .13em; color: var(--text-muted); margin: 0 0 18px; }
@@ -853,7 +816,6 @@ table { font-size: 14px; }
   .app-header { min-height: 65px; padding: 14px 20px; }
   .brand { font-size: 18px; }
   .brand-mark { width: 27px; height: 27px; }
-  .theme-toggle { font-size: 12px; padding: 8px 12px; }
   .workspace-shell { display: block; padding: 0 16px; }
   .workflow { position: sticky; top: 65px; z-index: 5; padding: 8px 0; background: var(--bg); }
   .workflow > .eyebrow, .workflow-note, .step small { display: none; }
@@ -865,8 +827,8 @@ table { font-size: 14px; }
   .workspace-intro > p:last-child { font-size: 16px; }
   .card { padding: 24px 20px; border-radius: 20px; }
   /* A logged-in header can wrap to more than one line on a narrow screen
-     (name + Organizations/Log out/Reset/Dark mode don't all fit one row) -
-     a fixed sticky offset tuned for the single-row header would then sit
+     (name + Organizations/Log out don't always fit one row) - a fixed
+     sticky offset tuned for the single-row header would then sit
      too high and get covered. Simplest fix that holds at any header height:
      don't stick it here at all - it just scrolls with the page instead. */
   .status-banner { position: static; top: auto; }
@@ -901,8 +863,8 @@ table { font-size: 14px; }
   /* Print always renders in light mode regardless of the on-screen theme -
      dark backgrounds waste ink and most printers/PDF viewers render dark
      body colors poorly, so every themed variable is pinned back to its
-     light value here rather than trusting whatever data-theme is active. */
-  :root, :root[data-theme="dark"] {
+     light value here rather than trusting the OS-level dark preference. */
+  :root {
     --bg: #ffffff;
     --card-bg: #ffffff;
     --subtle-bg: #fbfbfc;
